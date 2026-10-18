@@ -78,13 +78,14 @@ doctor. Standard library only; no new runtime dependencies.
 ## Tasks
 
 - T1 [S2-S9] src/opengsc/setup.py: wizard, discovery, validation, install,
-  auth/doctor/next-step, interrupt-safe prompts — commit —
+  auth/doctor/next-step, interrupt-safe prompts — commit 4fa6c06 — DONE
 - T2 [S2,S3,S8] src/opengsc/cli.py: `setup` subcommand + `--no-browser`,
-  KeyboardInterrupt → 130 — commit —
-- T3 [S10] tests/test_setup.py — commit —
-- T4 [S11] README setup rewrite + CLI commands, .mcp.json PyPI form — commit —
-- T5 [S12] version 0.2.0 in pyproject.toml, __init__.py, plugin.json, uv.lock — commit —
-- T6 [S1,S13] full gates (pytest, ruff check, ruff format), report, push — commit —
+  KeyboardInterrupt → 130 — commit b1b6695 — DONE
+- T3 [S10] tests/test_setup.py — commit e577ef7 — DONE
+- T4 [S11] README setup rewrite + CLI commands, .mcp.json PyPI form — commit 98483f7 — DONE
+- T5 [S12] version 0.2.0 in pyproject.toml, __init__.py, plugin.json, uv.lock — commit 3e547f0 — DONE
+- T6 [S1,S13] full gates (pytest, ruff check, ruff format), report, push — no code
+  commit; evidence below — DONE
 
 ## Log
 
@@ -100,3 +101,32 @@ doctor. Standard library only; no new runtime dependencies.
 - L3 (evidence): PyPI `opengsc` JSON returns 200 with version 0.1.0 only → S11
   PyPI form applies (`uvx opengsc`, pinned `uvx opengsc@<version>` in MCP
   snippets).
+
+- L4 (slice boundary): the branch is one cohesive feature slice of ~744 authored
+  lines across 6 commits (module 199 lines + tests ~330 + docs + version), past
+  the ~400-line review slice. It is not split here because the user asked for a
+  single `feat/setup-wizard` branch and will review before any PR; split into
+  chained PRs at PR time if desired (module+CLI / tests / docs+version).
+- L5 (decisions and findings): PyPI gate applied (200, only 0.1.0), so docs use
+  `uvx opengsc` for setup and `uvx opengsc@0.2.0` for MCP launch snippets;
+  0.2.0 is not published yet, so those pinned snippets only work after the
+  release. Removed Git from Setup prerequisites because `uvx opengsc` no longer
+  installs from GitHub. setup.py landed at 199 lines. A test found a real
+  validator bug: JSON arrays (`[]`) crashed `load_client` with AttributeError;
+  fixed by requiring a JSON object before reading `installed`/`web`.
+
+## Verification evidence
+
+- `uv run pytest -q`: 103 passed, 2 skipped (the 0600-permission tests are
+  POSIX-only and run on the Linux/macOS CI matrix). New: tests/test_setup.py,
+  22 passed, 1 skipped.
+- `uv run ruff check src tests`: clean.
+- `uv run ruff format --check src tests`: clean.
+- `uv run opengsc --help`: lists `setup`; `opengsc setup --help` shows
+  `--no-browser`.
+- `uv run opengsc doctor` against the real config: `auth check: OK`, 3 readable
+  properties, no secrets printed (unchanged behaviour).
+- Risk: none. No high-risk item applies: the new command validates before
+  writing, asks before overwriting, keeps the allowlist guard, adds no runtime
+  dependency, and the changed `.mcp.json`/README install form is the user's
+  explicitly requested contract change, not an unrequested break.
