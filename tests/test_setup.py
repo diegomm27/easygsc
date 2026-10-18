@@ -10,6 +10,7 @@ import pytest
 from opengsc import api, cli, setup
 
 SECRET = "SECRET-XYZ-123"
+REFRESH = "1//REFRESH-SECRET"
 
 
 @pytest.fixture
@@ -52,7 +53,7 @@ def feed(*answers):
 def write_token(config_dir):
     config_dir.mkdir(parents=True, exist_ok=True)
     token = {
-        "refresh_token": "1//REFRESH-SECRET",
+        "refresh_token": REFRESH,
         "client_id": "cid",
         "client_secret": SECRET,
         "token": "ya29.ACCESS-SECRET",
@@ -60,10 +61,12 @@ def write_token(config_dir):
     (config_dir / "token.json").write_text(json.dumps(token))
 
 
-def fake_auth(config_dir, calls=None):
-    def run(no_browser=False):
+def fake_auth(config_dir, calls=None, kwargs_seen=None):
+    def run(no_browser=False, **kwargs):
         if calls is not None:
             calls.append(no_browser)
+        if kwargs_seen is not None:
+            kwargs_seen.append(kwargs)
         write_token(config_dir)
 
     return run
@@ -295,6 +298,82 @@ class TestWalkthrough:
         captured = capsys.readouterr()
         assert SECRET not in captured.out
         assert SECRET not in captured.err
+
+
+class TestSecretOutput:
+    def test_auth_suppresses_the_refresh_token_and_reports_the_token_path(
+        self, config_dir, downloads, monkeypatch, capsys
+    ):
+        write_client(config_dir / "client_secret.json")
+        doctor_ok(monkeypatch)
+        seen = []
+        monkeypatch.setattr(setup.auth, "run_oauth_flow", fake_auth(config_dir, kwargs_seen=seen))
+        monkeypatch.setattr("builtins.input", feed(""))
+
+        assert setup.run(no_browser=True) == 0
+        out = capsys.readouterr().out
+        assert seen == [{"print_refresh_token": False}]
+        assert "Authenticated" in out
+        assert str(config_dir / "token.json") in out
+        assert "OPENGSC_REFRESH_TOKEN" not in out
+        assert SECRET not in out
+
+    def test_auth_failure_returns_1_and_reports_on_stderr(self, config_dir, monkeypatch, capsys):
+        write_client(config_dir / "client_secret.json")
+        monkeypatch.setattr(
+            setup.auth,
+            "run_oauth_flow",
+            mock.Mock(side_effect=setup.auth.AuthError("denied")),
+        )
+        monkeypatch.setattr("builtins.input", feed(""))
+
+        assert setup.run(no_browser=True) == 1
+        captured = capsys.readouterr()
+        assert "auth failed: denied" in captured.err
+        assert "opengsc setup" in captured.err
+        assert "claude_desktop_config.json" not in captured.out
+
+    def test_error_text_redacts_client_secret_and_refresh_token(
+        self, config_dir, monkeypatch, capsys
+    ):
+        write_client(config_dir / "client_secret.json")
+        write_token(config_dir)
+        monkeypatch.setattr(
+            setup.auth,
+            "run_oauth_flow",
+            mock.Mock(side_effect=setup.auth.AuthError(f"bad {SECRET} / {REFRESH}")),
+        )
+
+        assert setup._authenticate(no_browser=True) == 1
+        err = capsys.readouterr().err
+        assert SECRET not in err
+        assert REFRESH not in err
+        assert "***" in err
+
+    def test_setup_error_message_redacts_secrets(self, config_dir, monkeypatch, capsys):
+        write_client(config_dir / "client_secret.json")
+        monkeypatch.setattr(
+            setup, "_run", mock.Mock(side_effect=setup.SetupError(f"boom {SECRET}"))
+        )
+
+        assert setup.run() == 1
+        err = capsys.readouterr().err
+        assert SECRET not in err
+        assert "***" in err
+
+    def test_obtain_client_error_is_redacted(self, config_dir, downloads, monkeypatch, capsys):
+        write_client(config_dir / "client_secret.json")
+        monkeypatch.setattr(setup, "find_downloaded", lambda: downloads / "x.json")
+        monkeypatch.setattr(
+            setup, "load_client", mock.Mock(side_effect=setup.SetupError(f"bad {SECRET}"))
+        )
+        monkeypatch.setattr("builtins.input", mock.Mock(side_effect=EOFError))
+
+        with pytest.raises(setup.Cancelled):
+            setup._obtain_client(no_browser=True)
+        out = capsys.readouterr().out
+        assert SECRET not in out
+        assert "***" in out
 
 
 class TestCancellation:

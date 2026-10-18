@@ -134,11 +134,13 @@ def save_token(credentials) -> Path:
     return TOKEN_PATH
 
 
-def run_oauth_flow(no_browser: bool = False):
+def run_oauth_flow(no_browser: bool = False, *, print_refresh_token: bool = True):
     """Run the installed-app OAuth flow and persist the token.
 
     ``--no-browser`` still uses the loopback redirect flow; it only skips
     opening the browser window automatically (the URL is printed instead).
+    ``print_refresh_token=False`` keeps the token out of stdout for callers
+    such as ``opengsc setup``; ``opengsc auth`` keeps the default.
     """
     flow = InstalledAppFlow.from_client_config(client_config(), scopes=SCOPES)
     # The code exchange goes through the flow's own OAuth2Session: guard it.
@@ -147,7 +149,8 @@ def run_oauth_flow(no_browser: bool = False):
     save_token(credentials)
     # The user explicitly asked for the refresh token (stateless setups);
     # this is the only place it is ever printed.
-    print(f"OPENGSC_REFRESH_TOKEN={credentials.refresh_token}")
+    if print_refresh_token:
+        print(f"OPENGSC_REFRESH_TOKEN={credentials.refresh_token}")
     return credentials
 
 

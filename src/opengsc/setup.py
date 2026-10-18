@@ -123,12 +123,12 @@ def _obtain_client(no_browser: bool) -> Path:
             load_client(source)
             return source
         except WebClientError as exc:
-            print(exc)
+            print(_redact(str(exc)))
             _step(*STEPS[-1], no_browser)
             found = find_downloaded()
             source = found if found != source else None
         except SetupError as exc:
-            print(exc)
+            print(_redact(str(exc)))
             source = None
 
 
@@ -172,18 +172,49 @@ def _next_steps() -> None:
     print(f"Claude Code:\n  claude mcp add opengsc -- uvx {package}")
 
 
+def _known_secrets() -> tuple[str, ...]:
+    secrets = set()
+    for var in ("OPENGSC_CLIENT_SECRET", "OPENGSC_REFRESH_TOKEN"):
+        if value := os.environ.get(var):
+            secrets.add(value)
+    try:
+        client = next(iter(auth.client_config().values()))
+        if value := client.get("client_secret"):
+            secrets.add(value)
+    except (auth.AuthError, StopIteration):
+        pass
+    try:
+        token = json.loads(auth.TOKEN_PATH.read_text(encoding="utf-8"))
+        for key in ("client_secret", "refresh_token"):
+            if value := token.get(key):
+                secrets.add(value)
+    except (OSError, json.JSONDecodeError, AttributeError):
+        pass
+    return tuple(sorted(secrets, key=len, reverse=True))
+
+
+def _redact(text: str) -> str:
+    """Remove known client secrets and refresh tokens from user-facing text."""
+    for secret in _known_secrets():
+        text = text.replace(secret, "***")
+    return text
+
+
 def _authenticate(no_browser: bool) -> int:
     print("\nNow logging in to Google...")
     try:
-        auth.run_oauth_flow(no_browser=no_browser)
+        auth.run_oauth_flow(no_browser=no_browser, print_refresh_token=False)
     except auth.AuthError as exc:
+        message = _redact(str(exc))
         print(
-            f"auth failed: {exc}\nRerun 'opengsc setup' once the client is fixed.", file=sys.stderr
+            f"auth failed: {message}\nRerun 'opengsc setup' once the client is fixed.",
+            file=sys.stderr,
         )
         return 1
     if _doctor() != 0:
         print("auth check failed; see the report above.", file=sys.stderr)
         return 1
+    print(f"Authenticated; token saved to {auth.TOKEN_PATH}.")
     _next_steps()
     return 0
 
@@ -218,5 +249,5 @@ def run(no_browser: bool = False) -> int:
         print("setup cancelled; run 'opengsc setup' again when ready.", file=sys.stderr)
         return 2
     except SetupError as exc:
-        print(f"setup failed: {exc}", file=sys.stderr)
+        print(f"setup failed: {_redact(str(exc))}", file=sys.stderr)
         return 1

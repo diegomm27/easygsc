@@ -217,6 +217,17 @@ class TestOAuthFlow:
         out = capsys.readouterr().out
         assert "OPENGSC_REFRESH_TOKEN=r-123" in out
 
+    def test_run_oauth_flow_can_suppress_the_refresh_token_print(
+        self, config_dir, monkeypatch, capsys
+    ):
+        flow, _ = self.fake_flow()
+        monkeypatch.setenv("OPENGSC_CLIENT_ID", "cid")
+        monkeypatch.setenv("OPENGSC_CLIENT_SECRET", "sek")
+        with mock.patch.object(auth, "InstalledAppFlow") as flow_cls:
+            flow_cls.from_client_config.return_value = flow
+            auth.run_oauth_flow(no_browser=True, print_refresh_token=False)
+        assert "OPENGSC_REFRESH_TOKEN" not in capsys.readouterr().out
+
     def test_run_oauth_flow_guards_the_flow_session(self, config_dir, monkeypatch):
         flow, _ = self.fake_flow()
         monkeypatch.setenv("OPENGSC_CLIENT_ID", "cid")
