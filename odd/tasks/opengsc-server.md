@@ -37,5 +37,7 @@ Console. Read-only, small, auditable in one sitting. Python >= 3.10, MIT, packag
 
 ## Log
 
+- L0: Slice boundary note: commit b26a789 (T1+T2) is ~1757 authored lines (mostly
+  test scaffolding and lockfile); later slices stay under ~400 lines each.
 - L1 (user request): "# Build \"opengsc\": a minimal, transparent MCP server for Google Search Console ..." (full original request in conversation; hard requirements, four endpoints, four MCP tools, auth, CLI, plugin packaging, tests, README, process step 1: show tree + signatures, wait for OK).
 - L2 (user amendments after tree/signature review): (1) allowlist at transport level via guarded requests.Session.send(), redirects included, used for AuthorizedSession auth_request + credentials.refresh + flow oauth2session, with tests for refresh, code exchange, redirect bypass; (2) TSV: escape \t and \n, document; inspect_url and sitemaps contents array returned as compact JSON as Google sends, stated in README; do not round ctr/position; (3) add fixed metadata notes: rare-query anonymization breaks query-dimension sums; per-day per-search-type row cap prevents full export of very large sites; (4) 429/quota hint covers rateLimitExceeded AND quotaExceeded; (5) pin runtime deps with == in pyproject (uvx ignores uv.lock), uv.lock for dev/CI, Transparency notes transitives float; use official mcp SDK's mcp.server.fastmcp, not third-party fastmcp. "Go ahead with these changes."
