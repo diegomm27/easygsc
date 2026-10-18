@@ -6,14 +6,14 @@
 Let Claude (or any MCP client) read your **Google Search Console** data and help you with SEO.
 
 - **Read-only.** It can see your data, never change it.
-- **Small.** 4 tools, ~700 lines of Python you can audit in one sitting.
+- **Small.** 4 tools, ~900 lines of Python you can audit in one sitting.
 - **Private.** Talks only to Google. No telemetry, no third-party servers.
 
 Ask things like *"Which queries get impressions but few clicks?"* or *"Is this page indexed?"* and Claude pulls the real numbers from Search Console.
 
 ---
 
-## Setup (about 10 minutes)
+## Setup (about 5 minutes)
 
 You need:
 
@@ -21,13 +21,74 @@ You need:
 - [uv](https://docs.astral.sh/uv/getting-started/installation/) installed. It also installs Python for you if needed.
   - Windows: `winget install astral-sh.uv`
   - macOS/Linux: `curl -LsSf https://astral.sh/uv/install.sh | sh`
-- [Git](https://git-scm.com/downloads) installed (`git --version` to check).
 
-Then follow the four steps below.
+### Step 1. Run the guided setup
 
-> **Note:** opengsc is not on PyPI yet, so the commands below install it straight from GitHub.
+```bash
+uvx opengsc setup
+```
 
-### Step 1. Create a Google OAuth client
+It walks you through the Google Cloud steps one at a time, opening the right page in your browser and waiting for you to finish:
+
+1. Create a project.
+2. Enable the Search Console API.
+3. Configure the consent screen (**External**).
+4. Publish the app.
+5. Create a **Desktop app** OAuth client and download its JSON.
+
+Then it finds the JSON in your Downloads folder (or asks for the path), checks it is a Desktop client, copies it to `~/.config/opengsc/client_secret.json` with `0600` permissions, runs the Google login, checks that your properties are readable, and prints the snippet to connect Claude.
+
+- It never overwrites a different client file without asking, and only deletes your download if you say yes.
+- No browser? Add `--no-browser` to print the URLs instead.
+- Ctrl+C at any point is safe; run `uvx opengsc setup` again to resume.
+
+### Step 2. Connect it to Claude
+
+opengsc runs on your computer, so it works in **Claude Desktop** and **Claude Code** (not in claude.ai in the browser).
+
+**Claude Desktop:** open *Settings → Developer → Edit Config* and add `opengsc` to `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "opengsc": {
+      "command": "uvx",
+      "args": ["opengsc@0.2.0"]
+    }
+  }
+}
+```
+
+If the file already has other servers, add only the `"opengsc": {...}` block inside `mcpServers`. Then **quit Claude Desktop completely** (including the tray/menu bar icon) and reopen it.
+
+**Claude Code** (pick one):
+
+```bash
+# as a plugin
+claude plugin marketplace add diegomm27/opengsc
+claude plugin install opengsc@opengsc
+
+# or as a plain MCP server
+claude mcp add opengsc -- uvx opengsc@0.2.0
+```
+
+**Any other MCP client:** run `uvx opengsc@0.2.0` over stdio.
+
+---
+
+## CLI commands
+
+| Command | What it does |
+| --- | --- |
+| `opengsc setup` | Guided setup: Google Cloud steps, client file, login, check. |
+| `opengsc auth` | Run the Google login (`--no-browser` prints the URL). |
+| `opengsc doctor` | Auth mode, token expiry, readable properties, config paths, version. |
+| `opengsc serve` | Run the MCP server over stdio (also the default with no arguments). |
+
+<details>
+<summary>Manual setup</summary>
+
+### 1. Create a Google OAuth client
 
 This gives opengsc permission to ask Google for your data. You do it once.
 
@@ -54,7 +115,7 @@ This gives opengsc permission to ask Google for your data. You do it once.
    - Name: `opengsc`
    - Click **Create**, then **Download JSON** right away. Google won't show the secret again.
 
-### Step 2. Put the JSON file in place
+### 2. Put the JSON file in place
 
 Rename the downloaded file to `client_secret.json` and move it here:
 
@@ -79,10 +140,10 @@ mv ~/Downloads/client_secret_*.json ~/.config/opengsc/client_secret.json
 
 > **Windows gotcha:** if you rename the file in Explorer with extensions hidden, it can end up as `client_secret.json.json`. Check with `dir $HOME\.config\opengsc`.
 
-### Step 3. Log in
+### 3. Log in and check
 
 ```bash
-uvx --from git+https://github.com/diegomm27/opengsc opengsc auth
+uvx opengsc auth
 ```
 
 Your browser opens:
@@ -96,42 +157,12 @@ Your login is saved to `~/.config/opengsc/token.json`. On a machine without a br
 Check that everything works:
 
 ```bash
-uvx --from git+https://github.com/diegomm27/opengsc opengsc doctor
+uvx opengsc doctor
 ```
 
 You should see `auth check: OK` and a property count above 0.
 
-### Step 4. Connect it to Claude
-
-opengsc runs on your computer, so it works in **Claude Desktop** and **Claude Code** (not in claude.ai in the browser).
-
-**Claude Desktop:** open *Settings → Developer → Edit Config* and add `opengsc` to `claude_desktop_config.json`:
-
-```json
-{
-  "mcpServers": {
-    "opengsc": {
-      "command": "uvx",
-      "args": ["--from", "git+https://github.com/diegomm27/opengsc", "opengsc"]
-    }
-  }
-}
-```
-
-If the file already has other servers, add only the `"opengsc": {...}` block inside `mcpServers`. Then **quit Claude Desktop completely** (including the tray/menu bar icon) and reopen it.
-
-**Claude Code** (pick one):
-
-```bash
-# as a plugin
-claude plugin marketplace add diegomm27/opengsc
-claude plugin install opengsc@opengsc
-
-# or as a plain MCP server
-claude mcp add opengsc -- uvx --from git+https://github.com/diegomm27/opengsc opengsc
-```
-
-**Any other MCP client:** run `uvx --from git+https://github.com/diegomm27/opengsc opengsc` over stdio.
+</details>
 
 ---
 
@@ -184,10 +215,10 @@ The output ends with a metadata block. `more_may_exist: true` means the page was
 
 | Problem | Fix |
 | --- | --- |
-| `No OAuth client configured` | `client_secret.json` isn't where opengsc looks. Check the path and the name (Step 2). |
+| `No OAuth client configured` | Run `opengsc setup`, or check the path and name (Manual setup, step 2). |
 | `auth` fails right away with a valid-looking file | The client must be **Desktop app**. Open the JSON: it should start with `{"installed":`. If it starts with `{"web":`, create a new Desktop client. |
 | "Google hasn't verified this app" | Normal. Click **Advanced → Go to opengsc**. |
-| `401` / `invalid_grant` | Login expired or was revoked. Usually the app was left in *Testing* (Step 1.4). Run `opengsc auth` again. |
+| `401` / `invalid_grant` | Login expired or was revoked. Usually the app was left in *Testing*: publish it (Manual setup, step 1.4), then run `opengsc auth` again. |
 | `403` / "User does not have permission" | Wrong property name or no access. Use the exact string from `list_sites()`: `sc-domain:example.com` for domain properties, `https://example.com/` (with the trailing slash) for URL-prefix ones. |
 | `doctor` shows 0 properties | You logged in with an account that has no Search Console access. Run `auth` again with the right one. |
 | Claude doesn't see the tools | Fully restart Claude Desktop. In Claude Code, run `claude mcp list`. |
@@ -204,7 +235,7 @@ To revoke access at any time: [myaccount.google.com/permissions](https://myaccou
 - **Permission requested:** only `https://www.googleapis.com/auth/webmasters.readonly`. opengsc cannot submit sitemaps, edit properties or manage users.
 - **Network lock:** every request goes through one guard ([`src/opengsc/allowlist.py`](src/opengsc/allowlist.py)) that only allows `www.googleapis.com`, `searchconsole.googleapis.com`, `oauth2.googleapis.com` and `accounts.google.com`. Anything else, redirects included, fails before it's sent.
 - **Endpoints used:** `sites.list`, `searchAnalytics.query`, `sitemaps.list`, `urlInspection.index.inspect`. Nothing else.
-- **Files on disk:** `~/.config/opengsc/client_secret.json` (yours) and `~/.config/opengsc/token.json` (your login, saved with `0600` permissions; best effort on Windows). **Keep `token.json` private:** whoever has it can read your Search Console.
+- **Files on disk:** `~/.config/opengsc/client_secret.json` (yours, installed by `opengsc setup` with `0600` permissions) and `~/.config/opengsc/token.json` (your login, also `0600`; best effort on Windows). **Keep `token.json` private:** whoever has it can read your Search Console.
 - **Dependencies:** `mcp`, `google-auth`, `google-auth-oauthlib`, pinned exactly. That's all.
 - **Not included on purpose:** writes, analysis or scoring, telemetry, update checks, bundled prompts.
 

@@ -2,7 +2,7 @@
   "mcpServers": {
     "opengsc": {
       "command": "uvx",
-      "args": ["--from", "git+https://github.com/diegomm27/opengsc", "opengsc"]
+      "args": ["opengsc@0.2.0"]
     }
   }
 }
