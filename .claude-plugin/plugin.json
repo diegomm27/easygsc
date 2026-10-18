@@ -1,0 +1,12 @@
+{
+  "name": "opengsc",
+  "displayName": "OpenGSC",
+  "version": "0.1.0",
+  "description": "Read-only Google Search Console data for Claude: properties, search analytics, sitemaps, URL inspection.",
+  "author": {
+    "name": "opengsc contributors"
+  },
+  "license": "MIT",
+  "keywords": ["mcp", "google-search-console", "seo", "search-analytics"],
+  "documentationUrl": "https://github.com/YOUR_GITHUB_USER/opengsc#readme"
+}

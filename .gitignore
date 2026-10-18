@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+.pytest_cache/
+.ruff_cache/
+
+# Secrets and local tokens — never commit these
+client_secret*.json
+token.json
+*.pem
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

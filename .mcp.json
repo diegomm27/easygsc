@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "opengsc": {
+      "command": "uvx",
+      "args": ["opengsc@0.1.0"]
+    }
+  }
+}
