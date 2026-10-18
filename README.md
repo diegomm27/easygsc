@@ -3,245 +3,238 @@
 [![CI](https://github.com/diegomm27/opengsc/actions/workflows/ci.yml/badge.svg)](https://github.com/diegomm27/opengsc/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-A minimal, transparent MCP server for Google Search Console. It pulls GSC data
-(properties, search analytics, sitemaps, URL inspection) so Claude or any MCP
-client can help you with SEO — read-only, small, and auditable in one sitting.
+Let Claude (or any MCP client) read your **Google Search Console** data and help you with SEO.
 
-- **4 tools, 4 endpoints, ~700 lines of Python.** You can read the whole thing.
-- **Read-only.** It requests only
-  `https://www.googleapis.com/auth/webmasters.readonly`. It cannot submit
-  sitemaps, change properties, or manage users.
-- **Faithful data.** Raw API output as TSV or verbatim JSON — no scoring, no
-  summarizing, no rounding.
-- **Network-locked.** Every outbound request passes one transport-level guard
-  that only allows the four Google hosts below. Anything else raises.
+- **Read-only.** It can see your data, never change it.
+- **Small.** 4 tools, ~700 lines of Python you can audit in one sitting.
+- **Private.** Talks only to Google. No telemetry, no third-party servers.
 
-## What it does NOT do (on purpose)
+Ask things like *"Which queries get impressions but few clicks?"* or *"Is this page indexed?"* and Claude pulls the real numbers from Search Console.
 
-- No writes: no sitemap submit/delete, no property changes.
-- No analysis: it returns data; your assistant does the thinking.
-- No telemetry, no update checks, no CDNs.
-- No bundled skills, prompts, or slash commands.
+---
 
-## Transparency
+## Setup (about 10 minutes)
 
-**OAuth scope (the only one requested):**
-`https://www.googleapis.com/auth/webmasters.readonly`
+You need:
 
-**The exact four endpoints contacted:**
+- A Google account with access to at least one [Search Console](https://search.google.com/search-console) property.
+- [uv](https://docs.astral.sh/uv/getting-started/installation/) installed. It also installs Python for you if needed.
+  - Windows: `winget install astral-sh.uv`
+  - macOS/Linux: `curl -LsSf https://astral.sh/uv/install.sh | sh`
+- [Git](https://git-scm.com/downloads) installed (`git --version` to check).
 
-1. `GET https://www.googleapis.com/webmasters/v3/sites`
-2. `POST https://www.googleapis.com/webmasters/v3/sites/{siteUrl}/searchAnalytics/query`
-3. `GET https://www.googleapis.com/webmasters/v3/sites/{siteUrl}/sitemaps`
-4. `POST https://searchconsole.googleapis.com/v1/urlInspection/index:inspect`
+Then follow the four steps below.
 
-**Host allowlist.** All outbound HTTP goes through one guarded
-`requests.Session.send()` override (`src/opengsc/allowlist.py`). Any request to
-a host outside this set raises before it is sent — redirects included:
+> **Note:** opengsc is not on PyPI yet, so the commands below install it straight from GitHub.
 
-- `www.googleapis.com`
-- `searchconsole.googleapis.com`
-- `oauth2.googleapis.com`
-- `accounts.google.com` (OAuth flow only)
+### Step 1. Create a Google OAuth client
 
-The same guard wraps token refresh and the OAuth code exchange; tests prove
-each path hits it.
+This gives opengsc permission to ask Google for your data. You do it once.
 
-**Files written** (same location on every OS):
+1. **Create a project.** Open [console.cloud.google.com/projectcreate](https://console.cloud.google.com/projectcreate), name it `opengsc` and click **Create**. Make sure it is selected in the project picker at the top.
 
-| Path | Content |
+   *Tip: use a dedicated project. The consent screen is shared by everything in a project.*
+
+2. **Enable the API.** Open the [Search Console API page](https://console.cloud.google.com/apis/library/searchconsole.googleapis.com) and click **Enable**.
+
+3. **Set up the consent screen.** Open [Google Auth Platform](https://console.cloud.google.com/auth/overview) and click **Get started**:
+   - App name: `opengsc`
+   - User support email: your email
+   - Audience: **External**
+   - Contact email: your email
+   - Accept the policy and click **Create**.
+
+4. **Publish the app.** Open [Audience](https://console.cloud.google.com/auth/audience) and click **Publish app**, then confirm. The status should read **In production**.
+
+   - *Why:* in *Testing* mode, Google expires your login every 7 days.
+   - *Is it safe?* Yes. Publishing does **not** make your data public. Anyone who logs in through it only sees their own Search Console, and nobody can read yours without your Google login.
+
+5. **Create the client.** Open [Clients](https://console.cloud.google.com/auth/clients), click **Create client**:
+   - Application type: **Desktop app** (not *Web application*)
+   - Name: `opengsc`
+   - Click **Create**, then **Download JSON** right away. Google won't show the secret again.
+
+### Step 2. Put the JSON file in place
+
+Rename the downloaded file to `client_secret.json` and move it here:
+
+| OS | Location |
 | --- | --- |
-| `~/.config/opengsc/client_secret.json` | optional; your OAuth client credentials (you provide it) |
-| `~/.config/opengsc/token.json` | OAuth token, written atomically with `0600` permissions (best effort on Windows) |
+| Windows | `C:\Users\<you>\.config\opengsc\client_secret.json` |
+| macOS / Linux | `~/.config/opengsc/client_secret.json` |
 
-**Dependencies.** Runtime, pinned exactly (`uvx` resolves from these ranges,
-not from `uv.lock`):
+**Windows (PowerShell):**
 
-- `mcp==1.30.0` — official Model Context Protocol SDK (`mcp.server.fastmcp`)
-- `google-auth==2.62.0`
-- `google-auth-oauthlib==1.5.0`
-
-Transitive dependencies are not pinned and float per install; `uv.lock` pins
-them for development and CI only. Dev-only: `pytest`, `ruff`. That is the
-entire list.
-
-## Requirements
-
-- [uv](https://docs.astral.sh/uv/getting-started/installation/) (provides `uvx`)
-- Python 3.10+ (installed automatically by `uvx` if missing)
-- A Google account with access to at least one Search Console property
-
-## One-time Google Cloud setup
-
-1. Go to [console.cloud.google.com](https://console.cloud.google.com/) and
-   create (or pick) a project.
-2. **Enable the Search Console API**: *APIs & Services → Library* → search
-   "Search Console API" → **Enable**.
-3. **Configure the consent screen**: *APIs & Services → OAuth consent screen*
-   → External → fill in the minimum → add yourself as a test user if you keep
-   it in Testing.
-4. **Publish the app** (consent screen → "PUBLISH APP"). If you leave it in
-   *Testing*, refresh tokens stop working after 7 days and you will have to
-   re-authenticate weekly.
-5. **Create an OAuth client**: *APIs & Services → Credentials → Create
-   credentials → OAuth client ID* → Application type **Desktop app**. Download
-   the `client_secret.json` file and copy the client ID/secret.
-
-## Install
-
-### Claude Code (plugin, one command)
-
-```bash
-claude plugin marketplace add diegomm27/opengsc
-claude plugin install opengsc@opengsc
+```powershell
+mkdir $HOME\.config\opengsc -Force
+Move-Item $HOME\Downloads\client_secret_*.json $HOME\.config\opengsc\client_secret.json
 ```
 
-The plugin bundles the MCP server config; it launches `uvx opengsc@0.1.0`.
+**macOS / Linux:**
 
-### Claude Desktop
+```bash
+mkdir -p ~/.config/opengsc
+mv ~/Downloads/client_secret_*.json ~/.config/opengsc/client_secret.json
+```
 
-Add to `claude_desktop_config.json` (Settings → Developer → Edit Config):
+> **Windows gotcha:** if you rename the file in Explorer with extensions hidden, it can end up as `client_secret.json.json`. Check with `dir $HOME\.config\opengsc`.
+
+### Step 3. Log in
+
+```bash
+uvx --from git+https://github.com/diegomm27/opengsc opengsc auth
+```
+
+Your browser opens:
+
+1. Pick the Google account that has access to Search Console.
+2. You'll see **"Google hasn't verified this app"**. That's expected for a personal app: click **Advanced → Go to opengsc**.
+3. Allow read access to Search Console.
+
+Your login is saved to `~/.config/opengsc/token.json`. On a machine without a browser, add `--no-browser` and open the printed URL yourself.
+
+Check that everything works:
+
+```bash
+uvx --from git+https://github.com/diegomm27/opengsc opengsc doctor
+```
+
+You should see `auth check: OK` and a property count above 0.
+
+### Step 4. Connect it to Claude
+
+opengsc runs on your computer, so it works in **Claude Desktop** and **Claude Code** (not in claude.ai in the browser).
+
+**Claude Desktop:** open *Settings → Developer → Edit Config* and add `opengsc` to `claude_desktop_config.json`:
 
 ```json
 {
   "mcpServers": {
     "opengsc": {
       "command": "uvx",
-      "args": ["opengsc@0.1.0"]
+      "args": ["--from", "git+https://github.com/diegomm27/opengsc", "opengsc"]
     }
   }
 }
 ```
 
-### Any other MCP client (stdio)
+If the file already has other servers, add only the `"opengsc": {...}` block inside `mcpServers`. Then **quit Claude Desktop completely** (including the tray/menu bar icon) and reopen it.
 
-Same shape as above: run the command `uvx opengsc@0.1.0` over stdio.
-
-### Authenticate
+**Claude Code** (pick one):
 
 ```bash
-uvx opengsc@0.1.0 auth                # opens the browser
-uvx opengsc@0.1.0 auth --no-browser   # prints the URL; still completes on localhost
+# as a plugin
+claude plugin marketplace add diegomm27/opengsc
+claude plugin install opengsc@opengsc
+
+# or as a plain MCP server
+claude mcp add opengsc -- uvx --from git+https://github.com/diegomm27/opengsc opengsc
 ```
 
-The client ID/secret come from `~/.config/opengsc/client_secret.json` (the
-file you downloaded from Google Cloud Console) or from env vars
-`OPENGSC_CLIENT_ID` / `OPENGSC_CLIENT_SECRET`.
+**Any other MCP client:** run `uvx --from git+https://github.com/diegomm27/opengsc opengsc` over stdio.
 
-After the flow, the token is stored at `~/.config/opengsc/token.json` (0600)
-and the command prints `OPENGSC_REFRESH_TOKEN=...` once — for stateless setups
-(pass it as that env var plus the client ID/secret instead of the token file).
+---
 
-**Credential resolution order** (also printed by `opengsc doctor`):
+## Try it
 
-1. `OPENGSC_SERVICE_ACCOUNT_FILE` — service account JSON (optional; share the
-   property with the service account's email)
-2. `~/.config/opengsc/token.json` — saved OAuth token
-3. otherwise: run `opengsc auth`
+Start a new chat and ask:
 
-Check everything: `uvx opengsc@0.1.0 doctor` — shows auth mode, token expiry,
-readable property count, config paths, version. Exits 1 if auth fails. Secrets
-are never printed; logs go to stderr (WARNING by default).
+- "List my Search Console properties."
+- "Top 50 queries by impressions in the last 28 days for sc-domain:example.com."
+- "Which pages have lots of impressions but a CTR under 2%?"
+- "Queries where I rank between 5 and 15 on mobile."
+- "Check the status of my sitemaps."
+- "Is https://example.com/blog/post indexed?"
 
-## Tool reference
+Start with the first one: it returns the exact property names (`sc-domain:...` or `https://.../`) the other tools need.
 
-### `list_sites()`
+---
 
-Properties the account can read, with permission level. Use the `site_url`
-values verbatim in the other tools.
+## Tools
 
-```
-site_url	permission_level
-sc-domain:example.com	siteOwner
-https://example.com/	siteFullUser
-```
+| Tool | What it returns |
+| --- | --- |
+| `list_sites()` | Properties you can read, with your permission level. |
+| `search_analytics(site_url, ...)` | Clicks, impressions, CTR and position, by query, page, country, device, date or search appearance. Supports filters. |
+| `list_sitemaps(site_url)` | Submitted sitemaps, last download, errors and warnings. |
+| `inspect_url(site_url, url)` | Index status, canonical, last crawl, mobile usability. Limited by Google to 2,000 calls/day per property. |
 
-### `search_analytics(site_url, start_date=None, end_date=None, dimensions=["query"], filters=None, search_type="web", data_state="final", row_limit=1000, start_row=0)`
+Data comes back unprocessed (TSV or Google's raw JSON), so Claude works with exact numbers.
 
-Example: top queries and device for the default range (last 28 days, ending
-3 days ago to respect GSC's data lag), filtered to mobile:
+<details>
+<summary><code>search_analytics</code> parameters</summary>
 
-```
-search_analytics(
-  site_url="sc-domain:example.com",
-  dimensions=["query", "device"],
-  filters=[{"dimension": "device", "operator": "equals", "expression": "MOBILE"}],
-  row_limit=25
-)
-```
+| Parameter | Default | Options |
+| --- | --- | --- |
+| `start_date`, `end_date` | last 28 days, ending 3 days ago (GSC data lag) | `YYYY-MM-DD` |
+| `dimensions` | `["query"]` | `query`, `page`, `country`, `device`, `date`, `searchAppearance` |
+| `filters` | none | list of `{"dimension", "operator", "expression"}`; operators `equals`, `notEquals`, `contains`, `notContains`, `includingRegex`, `excludingRegex` |
+| `search_type` | `web` | `web`, `image`, `video`, `news`, `discover`, `googleNews` |
+| `data_state` | `final` | `final`, `all` (includes fresh data) |
+| `row_limit` | `1000` | 1 to 25000 |
+| `start_row` | `0` | for pagination |
 
-Output is TSV with a header (`query  device  clicks  impressions  ctr
-position`), `ctr`/`position` at full API precision (never rounded), then a
-metadata block:
+The output ends with a metadata block. `more_may_exist: true` means the page was full; ask for the next one with `start_row`.
 
-```
-date_range: 2026-01-21..2026-02-17
-search_type: web
-rows_returned: 25
-row_limit: 25
-start_row: 0
-more_may_exist: true
-note: the API anonymizes rare queries, so sums over the query dimension will not match totals queried without dimensions.
-note: the API applies a per-day, per-search-type row cap, so very large sites cannot be fully exported regardless of pagination.
-```
+</details>
 
-- `more_may_exist: true` means the page was full (`rows == row_limit`);
-  paginate with `start_row`.
-- Tabs and newlines inside values are escaped as `\t` / `\n`.
-- `row_limit` max 25000; out-of-range values are rejected, never clamped.
-- Dimensions: `query`, `page`, `country`, `device`, `date`, `searchAppearance`.
-- Search types: `web`, `image`, `video`, `news`, `discover`, `googleNews`.
-- `data_state`: `final` (default) or `all` (includes fresh, unfinished data).
-- Filter operators: `equals`, `notEquals`, `contains`, `notContains`,
-  `includingRegex`, `excludingRegex`.
-
-### `list_sitemaps(site_url)`
-
-Submitted sitemaps with last download, error/warning counts. Top-level fields
-are TSV; the nested `contents` array is returned as compact JSON exactly as
-Google sends it.
-
-### `inspect_url(site_url, url)`
-
-URL Inspection: index status, coverage, canonical, last crawl, mobile
-usability if present. Returned as compact JSON verbatim. Counts against
-Google's quota of 2,000 queries/day per property.
+---
 
 ## Troubleshooting
 
-- **403 / "User does not have permission"** — property format. Domain
-  properties are `sc-domain:example.com` (no scheme, no path); URL-prefix
-  properties are the full URL **with trailing slash** (`https://example.com/`).
-  `list_sites()` prints the exact strings to use. Also confirm the account has
-  access to the property.
-- **401 / `invalid_grant`** — the token expired or was revoked (e.g. the app
-  was left in *Testing* — see setup step 4 — or the refresh token was
-  rotated). Run `opengsc auth` again.
-- **429 / `rateLimitExceeded` / `quotaExceeded`** — Search Console enforces
-  per-day, per-property quotas; URL Inspection is limited to 2,000
-  queries/day per property. Wait or reduce volume.
-- **Empty results for old dates** — Search Console only keeps 16 months of
-  data; earlier dates return nothing.
-- **Query sums don't match** — rare queries are anonymized; sums over the
-  `query` dimension will not match totals queried without dimensions.
-  Google-side behavior, not a bug.
-- **Very large sites return fewer rows than expected** — there is a per-day,
-  per-search-type row cap; pagination cannot export beyond it.
+| Problem | Fix |
+| --- | --- |
+| `No OAuth client configured` | `client_secret.json` isn't where opengsc looks. Check the path and the name (Step 2). |
+| `auth` fails right away with a valid-looking file | The client must be **Desktop app**. Open the JSON: it should start with `{"installed":`. If it starts with `{"web":`, create a new Desktop client. |
+| "Google hasn't verified this app" | Normal. Click **Advanced → Go to opengsc**. |
+| `401` / `invalid_grant` | Login expired or was revoked. Usually the app was left in *Testing* (Step 1.4). Run `opengsc auth` again. |
+| `403` / "User does not have permission" | Wrong property name or no access. Use the exact string from `list_sites()`: `sc-domain:example.com` for domain properties, `https://example.com/` (with the trailing slash) for URL-prefix ones. |
+| `doctor` shows 0 properties | You logged in with an account that has no Search Console access. Run `auth` again with the right one. |
+| Claude doesn't see the tools | Fully restart Claude Desktop. In Claude Code, run `claude mcp list`. |
+| `429` / quota exceeded | Google's daily limits. Wait and retry. |
+| No data for old dates | Search Console only keeps 16 months. |
+| Query totals don't add up | Google hides rare queries for privacy, so per-query sums are lower than the site total. |
+
+To revoke access at any time: [myaccount.google.com/permissions](https://myaccount.google.com/permissions) → opengsc → **Remove access**.
+
+---
+
+## Security and transparency
+
+- **Permission requested:** only `https://www.googleapis.com/auth/webmasters.readonly`. opengsc cannot submit sitemaps, edit properties or manage users.
+- **Network lock:** every request goes through one guard ([`src/opengsc/allowlist.py`](src/opengsc/allowlist.py)) that only allows `www.googleapis.com`, `searchconsole.googleapis.com`, `oauth2.googleapis.com` and `accounts.google.com`. Anything else, redirects included, fails before it's sent.
+- **Endpoints used:** `sites.list`, `searchAnalytics.query`, `sitemaps.list`, `urlInspection.index.inspect`. Nothing else.
+- **Files on disk:** `~/.config/opengsc/client_secret.json` (yours) and `~/.config/opengsc/token.json` (your login, saved with `0600` permissions; best effort on Windows). **Keep `token.json` private:** whoever has it can read your Search Console.
+- **Dependencies:** `mcp`, `google-auth`, `google-auth-oauthlib`, pinned exactly. That's all.
+- **Not included on purpose:** writes, analysis or scoring, telemetry, update checks, bundled prompts.
+
+<details>
+<summary>Advanced: other ways to authenticate</summary>
+
+opengsc looks for credentials in this order (`doctor` shows which one it used):
+
+1. **Service account:** set `OPENGSC_SERVICE_ACCOUNT_FILE` to the path of a service account JSON key. Then add the service account's email as a user of your property in Search Console (*Settings → Users and permissions*). No browser login needed, good for servers.
+2. **Saved login:** `~/.config/opengsc/token.json`, created by `opengsc auth`.
+
+Instead of `client_secret.json`, you can provide the OAuth client with the `OPENGSC_CLIENT_ID` and `OPENGSC_CLIENT_SECRET` environment variables.
+
+</details>
+
+---
 
 ## Development
 
 ```bash
 git clone https://github.com/diegomm27/opengsc.git
 cd opengsc
-uv sync          # install with dev deps
-uv run pytest    # tests (no network; HTTP is mocked)
+uv sync                      # install with dev dependencies
+uv run pytest                # tests (no network, HTTP is mocked)
 uv run ruff check src tests && uv run ruff format --check src tests
-claude plugin validate .   # plugin manifest check
+claude plugin validate .     # check the plugin manifest
 ```
 
-CI runs lint + tests on Linux, macOS and Windows (Python 3.10/3.12).
-Releases go to PyPI via Trusted Publishing (no API token secrets).
+CI runs lint and tests on Linux, macOS and Windows (Python 3.10 and 3.12). Releases are published to PyPI through Trusted Publishing.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE).
