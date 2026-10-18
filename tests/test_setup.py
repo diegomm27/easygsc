@@ -176,6 +176,21 @@ class TestInstallClient:
         setup.install_client(source)
         assert json.loads(dest.read_text())["installed"]["client_secret"] == "NEW-SECRET"
 
+    def test_failed_replace_keeps_the_previous_file(self, config_dir, tmp_path, monkeypatch):
+        dest = write_client(config_dir / "client_secret.json", secret="OLD-SECRET")
+        source = write_client(tmp_path / "client_secret.json", secret="NEW-SECRET")
+        monkeypatch.setattr("builtins.input", feed("y"))
+        monkeypatch.setattr(setup.os, "replace", mock.Mock(side_effect=OSError("boom")))
+        with pytest.raises(OSError):
+            setup.install_client(source)
+        assert json.loads(dest.read_text())["installed"]["client_secret"] == "OLD-SECRET"
+        assert sorted(p.name for p in config_dir.iterdir()) == ["client_secret.json"]
+
+    def test_writes_no_temporary_files(self, config_dir, tmp_path):
+        source = write_client(tmp_path / "client_secret.json")
+        setup.install_client(source)
+        assert sorted(p.name for p in config_dir.iterdir()) == ["client_secret.json"]
+
     def test_identical_file_does_not_prompt(self, config_dir, tmp_path, monkeypatch):
         dest = write_client(config_dir / "client_secret.json", secret=SECRET)
         source = write_client(tmp_path / "client_secret.json", secret=SECRET)

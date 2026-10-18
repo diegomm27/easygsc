@@ -10,6 +10,7 @@ import json
 import os
 import shutil
 import sys
+import tempfile
 import webbrowser
 from pathlib import Path
 
@@ -136,11 +137,23 @@ def install_client(source: Path, dest: Path | None = None) -> Path:
             print(f"Keeping the existing file at {dest}.")
             return dest
     dest.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(source, dest)
+    fd, tmp_name = tempfile.mkstemp(dir=dest.parent, prefix=".client_secret-", suffix=".tmp")
     try:
-        os.chmod(dest, 0o600)  # best effort, like auth.save_token
-    except OSError:
-        pass
+        with os.fdopen(fd, "wb") as out, open(source, "rb") as src:
+            shutil.copyfileobj(src, out)
+            out.flush()
+            os.fsync(out.fileno())
+        try:
+            os.chmod(tmp_name, 0o600)  # mkstemp already creates it 0600 on POSIX
+        except OSError:
+            pass  # best effort on platforms without POSIX permissions
+        os.replace(tmp_name, dest)
+    except BaseException:
+        try:
+            os.unlink(tmp_name)
+        except OSError:
+            pass
+        raise
     return dest
 
 
