@@ -2,8 +2,10 @@
 
 Resolution order (documented in README, printed by ``opengsc doctor``):
 1. service account file (``OPENGSC_SERVICE_ACCOUNT_FILE``)
-2. saved OAuth token (``~/.config/opengsc/token.json``)
-3. otherwise run ``opengsc auth``
+2. refresh token from the environment (``OPENGSC_REFRESH_TOKEN`` plus the
+   OAuth client from env vars or ``client_secret.json``), for stateless setups
+3. saved OAuth token (``~/.config/opengsc/token.json``)
+4. otherwise run ``opengsc auth``
 
 Nothing here logs or returns secrets; the refresh token is printed exactly
 once, by ``run_oauth_flow``, because the user asked for it.
@@ -68,6 +70,17 @@ def resolve_credentials():
     if sa_file:
         creds = service_account.Credentials.from_service_account_file(sa_file, scopes=SCOPES)
         return creds
+    refresh_token = os.environ.get("OPENGSC_REFRESH_TOKEN")
+    if refresh_token:
+        client = next(iter(client_config().values()))
+        return oauth2_credentials.Credentials(
+            token=None,
+            refresh_token=refresh_token,
+            token_uri=client.get("token_uri", GOOGLE_TOKEN_URI),
+            client_id=client["client_id"],
+            client_secret=client["client_secret"],
+            scopes=SCOPES,
+        )
     if TOKEN_PATH.is_file():
         return oauth2_credentials.Credentials.from_authorized_user_file(
             str(TOKEN_PATH), scopes=SCOPES

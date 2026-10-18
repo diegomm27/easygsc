@@ -27,6 +27,8 @@ def _auth_mode() -> str:
 
     if os.environ.get("OPENGSC_SERVICE_ACCOUNT_FILE"):
         return "service-account"
+    if os.environ.get("OPENGSC_REFRESH_TOKEN"):
+        return "oauth-env"
     if auth.TOKEN_PATH.is_file():
         return "oauth-token"
     return "none"
@@ -45,6 +47,8 @@ def _doctor() -> int:
         info = auth.token_info()
         lines.append(f"token expiry: {info.get('expiry', 'unknown')}")
         lines.append(f"token has refresh_token: {info.get('has_refresh_token', False)}")
+    elif mode == "oauth-env":
+        lines.append("token expiry: n/a (refresh token from OPENGSC_REFRESH_TOKEN)")
     elif mode == "service-account":
         lines.append("token expiry: n/a (service account keys do not expire)")
     else:

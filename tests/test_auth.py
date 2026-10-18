@@ -86,6 +86,33 @@ class TestResolutionOrder:
         creds = auth.resolve_credentials()
         assert creds.scopes == [auth.SCOPES[0]]
 
+    def test_refresh_token_env_beats_token_json(self, config_dir, monkeypatch):
+        monkeypatch.delenv("OPENGSC_SERVICE_ACCOUNT_FILE", raising=False)
+        (config_dir / "token.json").write_text(json.dumps({"refresh_token": "from-file"}))
+        monkeypatch.setenv("OPENGSC_REFRESH_TOKEN", "from-env")
+        monkeypatch.setenv("OPENGSC_CLIENT_ID", "cid")
+        monkeypatch.setenv("OPENGSC_CLIENT_SECRET", "sek")
+        creds = auth.resolve_credentials()
+        assert creds.refresh_token == "from-env"
+        assert creds.client_id == "cid"
+        assert creds.scopes == [auth.SCOPES[0]]
+
+    def test_refresh_token_env_without_client_raises_with_hint(self, config_dir, monkeypatch):
+        monkeypatch.delenv("OPENGSC_SERVICE_ACCOUNT_FILE", raising=False)
+        monkeypatch.delenv("OPENGSC_CLIENT_ID", raising=False)
+        monkeypatch.delenv("OPENGSC_CLIENT_SECRET", raising=False)
+        monkeypatch.setenv("OPENGSC_REFRESH_TOKEN", "from-env")
+        with pytest.raises(auth.AuthError, match="OPENGSC_CLIENT_ID"):
+            auth.resolve_credentials()
+
+    def test_service_account_beats_refresh_token_env(self, config_dir, monkeypatch):
+        sa_path = config_dir / "sa.json"
+        sa_path.write_text(json.dumps(SA_FILE))
+        monkeypatch.setenv("OPENGSC_SERVICE_ACCOUNT_FILE", str(sa_path))
+        monkeypatch.setenv("OPENGSC_REFRESH_TOKEN", "from-env")
+        creds = auth.resolve_credentials()
+        assert isinstance(creds, ga_service_account.Credentials)
+
 
 class TestClientConfig:
     def test_env_vars_build_client_config(self, config_dir, monkeypatch):

@@ -214,7 +214,8 @@ To revoke access at any time: [myaccount.google.com/permissions](https://myaccou
 opengsc looks for credentials in this order (`doctor` shows which one it used):
 
 1. **Service account:** set `OPENGSC_SERVICE_ACCOUNT_FILE` to the path of a service account JSON key. Then add the service account's email as a user of your property in Search Console (*Settings → Users and permissions*). No browser login needed, good for servers.
-2. **Saved login:** `~/.config/opengsc/token.json`, created by `opengsc auth`.
+2. **Refresh token from the environment:** `opengsc auth` prints `OPENGSC_REFRESH_TOKEN=...` once. Set that variable (plus the OAuth client, see below) to run without a `token.json` file, for example in a container. Treat it like a password.
+3. **Saved login:** `~/.config/opengsc/token.json`, created by `opengsc auth`.
 
 Instead of `client_secret.json`, you can provide the OAuth client with the `OPENGSC_CLIENT_ID` and `OPENGSC_CLIENT_SECRET` environment variables.
 

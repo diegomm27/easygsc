@@ -115,6 +115,15 @@ class TestDoctor:
         assert cli.main(["doctor"]) == 0
         assert "service-account" in capsys.readouterr().out
 
+    def test_refresh_token_env_mode_never_prints_token(self, config_dir, monkeypatch, capsys):
+        monkeypatch.delenv("OPENGSC_SERVICE_ACCOUNT_FILE", raising=False)
+        monkeypatch.setenv("OPENGSC_REFRESH_TOKEN", "1//SECRET_ENV_REFRESH")
+        monkeypatch.setattr(cli.api, "list_sites", lambda *a, **k: {"siteEntry": []})
+        assert cli.main(["doctor"]) == 0
+        out = capsys.readouterr().out
+        assert "oauth-env" in out
+        assert "1//SECRET_ENV_REFRESH" not in out
+
     def test_api_failure_exits_1_and_reports(self, config_dir, monkeypatch, capsys):
         monkeypatch.delenv("OPENGSC_SERVICE_ACCOUNT_FILE", raising=False)
         config_dir.joinpath("token.json").write_text(json.dumps({"refresh_token": "r"}))

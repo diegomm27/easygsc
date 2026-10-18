@@ -18,3 +18,4 @@ token.json
 .idea/
 .DS_Store
 Thumbs.db
+*.whl
