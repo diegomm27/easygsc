@@ -297,6 +297,28 @@ class TestWalkthrough:
         assert SECRET not in captured.err
 
 
+class TestCancellation:
+    def test_eof_at_the_path_prompt_cancels(self, config_dir, downloads, monkeypatch, capsys):
+        monkeypatch.setattr(setup.webbrowser, "open", mock.Mock(return_value=True))
+        monkeypatch.setattr("builtins.input", mock.Mock(side_effect=EOFError))
+        assert setup.run() == 2
+        err = capsys.readouterr().err
+        assert "cancelled" in err
+        assert "opengsc setup" in err
+
+    def test_quit_at_a_step_prompt_cancels(self, config_dir, downloads, monkeypatch, capsys):
+        monkeypatch.setattr(setup.webbrowser, "open", mock.Mock(return_value=True))
+        monkeypatch.setattr("builtins.input", feed("q"))
+        assert setup.run() == 2
+        assert "cancelled" in capsys.readouterr().err
+
+    def test_quit_at_a_confirm_prompt_cancels(self, config_dir, downloads, monkeypatch, capsys):
+        write_client(config_dir / "client_secret.json")
+        monkeypatch.setattr("builtins.input", feed("quit"))
+        assert setup.run(no_browser=True) == 2
+        assert "cancelled" in capsys.readouterr().err
+
+
 class TestInterrupt:
     def test_keyboard_interrupt_exits_130(self, config_dir, monkeypatch, capsys):
         monkeypatch.setattr(setup.webbrowser, "open", mock.Mock(return_value=True))

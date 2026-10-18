@@ -42,11 +42,18 @@ class WebClientError(SetupError):
     pass
 
 
+class Cancelled(Exception):
+    """The user cancelled setup with EOF, Ctrl+D or q/quit."""
+
+
 def _input(prompt: str) -> str:
     try:
-        return input(prompt)
+        answer = input(prompt)
     except EOFError:
-        raise SetupError("No input available; run 'opengsc setup' in a terminal.") from None
+        raise Cancelled("no input") from None
+    if answer.strip().lower() in ("q", "quit"):
+        raise Cancelled("quit")
+    return answer
 
 
 def _confirm(prompt: str, default: bool = False) -> bool:
@@ -204,9 +211,12 @@ def _run(no_browser: bool) -> int:
 
 
 def run(no_browser: bool = False) -> int:
-    """Interactive setup. Returns an exit code; Ctrl+C propagates to the CLI."""
+    """Interactive setup: 0 success, 1 failure, 2 cancelled; Ctrl+C reaches the CLI."""
     try:
         return _run(no_browser)
+    except Cancelled:
+        print("setup cancelled; run 'opengsc setup' again when ready.", file=sys.stderr)
+        return 2
     except SetupError as exc:
         print(f"setup failed: {exc}", file=sys.stderr)
         return 1
