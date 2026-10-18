@@ -1,12 +1,7 @@
-"""CLI entry points.
-
-- ``opengsc`` (no args) or ``opengsc serve``: run the MCP server over stdio.
-- ``opengsc auth [--no-browser]``: run the OAuth flow, store the token.
-- ``opengsc doctor``: report auth mode, token expiry, readable property
-  count, config paths and version; exit 1 when auth does not work.
-
-Rules: logs go to stderr (default level WARNING); secrets are never printed;
-user-facing command output (doctor, auth) goes to stdout.
+"""CLI: ``opengsc``/``opengsc serve`` runs MCP over stdio; ``auth`` runs the
+OAuth flow; ``doctor`` reports auth state and exits 1 when auth fails. Logs
+go to stderr (WARNING by default); secrets are never printed; doctor output
+goes to stdout.
 """
 
 from __future__ import annotations
@@ -38,14 +33,14 @@ def _auth_mode() -> str:
 
 
 def _doctor() -> int:
+    mode = _auth_mode()
     lines = [
         f"opengsc version: {__version__}",
-        f"auth mode: {_auth_mode()}",
+        f"auth mode: {mode}",
         f"config dir: {auth.CONFIG_DIR}",
         f"token file: {auth.TOKEN_PATH}",
         f"client secret file: {auth.CLIENT_SECRET_PATH}",
     ]
-    mode = _auth_mode()
     if mode == "oauth-token":
         info = auth.token_info()
         lines.append(f"token expiry: {info.get('expiry', 'unknown')}")
@@ -56,21 +51,20 @@ def _doctor() -> int:
         lines.append("token expiry: n/a (not authenticated)")
 
     if mode == "none":
-        lines.append("readable properties: unknown (not authenticated)")
-        lines.append("auth check: FAILED - run 'opengsc auth' or set OPENGSC_SERVICE_ACCOUNT_FILE")
+        lines += [
+            "readable properties: unknown (not authenticated)",
+            "auth check: FAILED - run 'opengsc auth' or set OPENGSC_SERVICE_ACCOUNT_FILE",
+        ]
         print("\n".join(lines))
         return 1
 
     try:
-        data = api.list_sites()
-        count = len(data.get("siteEntry", []))
-        lines.append(f"readable properties: {count}")
-        lines.append("auth check: OK")
+        count = len(api.list_sites().get("siteEntry", []))
+        lines += [f"readable properties: {count}", "auth check: OK"]
         print("\n".join(lines))
         return 0
     except api.ApiError as err:
-        lines.append(f"readable properties: unknown (API error)")
-        lines.append(f"auth check: FAILED - {err}")
+        lines += ["readable properties: unknown (API error)", f"auth check: FAILED - {err}"]
         print("\n".join(lines))
         return 1
 

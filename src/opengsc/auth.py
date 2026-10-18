@@ -1,23 +1,18 @@
 """Credential resolution, the OAuth flow, and token storage.
 
-Resolution order (documented in README and printed by ``opengsc doctor``):
+Resolution order (documented in README, printed by ``opengsc doctor``):
+1. service account file (``OPENGSC_SERVICE_ACCOUNT_FILE``)
+2. saved OAuth token (``~/.config/opengsc/token.json``)
+3. otherwise run ``opengsc auth``
 
-1. Service account file: ``OPENGSC_SERVICE_ACCOUNT_FILE``.
-2. Saved OAuth token: ``~/.config/opengsc/token.json``.
-3. Otherwise: run ``opengsc auth`` (OAuth desktop-app flow using
-   ``~/.config/opengsc/client_secret.json`` or ``OPENGSC_CLIENT_ID`` /
-   ``OPENGSC_CLIENT_SECRET``).
-
-Nothing in this module logs or returns secrets. The refresh token is printed
-exactly once by ``run_oauth_flow``, because the user asked for it (stateless
-setup).
+Nothing here logs or returns secrets; the refresh token is printed exactly
+once, by ``run_oauth_flow``, because the user asked for it.
 """
 
 from __future__ import annotations
 
 import json
 import os
-import sys
 import tempfile
 from pathlib import Path
 
@@ -152,7 +147,6 @@ def make_authorized_session():
 
 def refresh_credentials_if_expired(credentials) -> None:
     """Refresh credentials through the guarded session if needed."""
-    import google.auth.transport.requests as ga_requests
 
     if not credentials.valid:
         credentials.refresh(GoogleAuthRequest(session=GuardedSession()))

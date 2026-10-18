@@ -7,7 +7,6 @@ into a temporary directory via monkeypatching opengsc.auth module constants.
 import json
 import os
 import stat
-from pathlib import Path
 from unittest import mock
 
 import pytest
@@ -175,7 +174,9 @@ class TestOAuthFlow:
         flow.run_local_server.return_value = creds
         return flow, creds
 
-    def test_run_oauth_flow_writes_token_and_prints_refresh_token(self, config_dir, monkeypatch, capsys):
+    def test_run_oauth_flow_writes_token_and_prints_refresh_token(
+        self, config_dir, monkeypatch, capsys
+    ):
         flow, creds = self.fake_flow()
         monkeypatch.setenv("OPENGSC_CLIENT_ID", "cid")
         monkeypatch.setenv("OPENGSC_CLIENT_SECRET", "sek")

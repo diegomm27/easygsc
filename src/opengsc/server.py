@@ -1,17 +1,11 @@
 """MCP server: the four tools.
 
-Output rules:
-- Tabular data (sites, search analytics rows, sitemaps) is TSV with a header
-  line. Tabs and newlines inside values are escaped as \\t and \\n (this is
-  documented in the README).
-- Nested data (URL Inspection results, sitemap contents) is returned as
-  compact JSON exactly as Google sends it.
-- ctr and position are never rounded; API values are returned as-is.
-- search_analytics always appends a metadata block: the date range used, rows
-  returned, whether more rows may exist (rows == row_limit), and two fixed
-  notes about GSC data quirks.
-- API errors are returned as formatted strings with status, Google's message
-  and a hint — never raised past the tool boundary, never truncated silently.
+Output rules: tabular data is TSV with a header (tabs/newlines escaped as
+\\t and \\n); nested data (URL inspection, sitemap contents) is compact JSON
+verbatim; ctr/position are never rounded; search_analytics always appends a
+metadata block (date range, rows returned, more_may_exist, fixed data-quirk
+notes); API errors are returned as formatted strings, never raised past the
+tool boundary, never truncated silently.
 """
 
 from __future__ import annotations
@@ -66,7 +60,13 @@ def _default_date_range() -> tuple[str, str]:
 
 def _escape(value) -> str:
     """Escape tabs and newlines so TSV rows stay one line per row."""
-    return str(value).replace("\\", "\\\\").replace("\t", "\\t").replace("\n", "\\n").replace("\r", "\\r")
+    return (
+        str(value)
+        .replace("\\", "\\\\")
+        .replace("\t", "\\t")
+        .replace("\n", "\\n")
+        .replace("\r", "\\r")
+    )
 
 
 def _tsv(header: list[str], rows: list[list]) -> str:
@@ -102,6 +102,7 @@ def list_sites() -> str:
     Returns TSV: site_url<TAB>permission_level. Use the site_url values as-is
     for the site_url argument of the other tools.
     """
+
     def run() -> str:
         data = api.list_sites()
         entries = data.get("siteEntry", [])
@@ -127,15 +128,13 @@ def search_analytics(
 ) -> str:
     """Query search analytics for one property.
 
-    Args:
-        site_url: property from list_sites, e.g. 'sc-domain:example.com'.
-        start_date, end_date: YYYY-MM-DD; default is the last 28 days ending 3 days ago.
-        dimensions: subset of query, page, country, device, date, searchAppearance.
-        filters: list of {dimension, operator, expression}; operators: equals,
-            notEquals, contains, notContains, includingRegex, excludingRegex.
-        search_type: web, image, video, news, discover, googleNews.
-        data_state: final (default) or all (includes fresh, unfinished data).
-        row_limit: 1..25000. start_row: offset for pagination.
+    site_url: property from list_sites. start_date/end_date: YYYY-MM-DD
+    (default: last 28 days ending 3 days ago). dimensions: subset of query,
+    page, country, device, date, searchAppearance. filters: list of
+    {dimension, operator, expression} with operators equals, notEquals,
+    contains, notContains, includingRegex, excludingRegex. search_type: web,
+    image, video, news, discover, googleNews. data_state: final or all.
+    row_limit: 1..25000; start_row: pagination offset.
 
     Returns TSV rows plus a metadata block (date range, rows returned,
     more_may_exist: true when rows == row_limit, so paginate with start_row).
@@ -178,9 +177,7 @@ def search_analytics(
         data = api.search_analytics(site_url, body)
         rows = data.get("rows", [])
         header = [*dimensions, *METRIC_KEYS]
-        table = [
-            [*r.get("keys", []), *(r.get(k) for k in METRIC_KEYS)] for r in rows
-        ]
+        table = [[*r.get("keys", []), *(r.get(k) for k in METRIC_KEYS)] for r in rows]
         meta = [
             f"date_range: {start_date}..{end_date}",
             f"search_type: {search_type}",
@@ -202,9 +199,10 @@ def search_analytics(
 def list_sitemaps(site_url: str) -> str:
     """List submitted sitemaps for one property with status and counts.
 
-    Top-level fields are TSV; the nested contents array is returned as
-    compact JSON exactly as the API sends it.
+    Top-level fields are TSV; the nested contents array is compact JSON
+    exactly as the API sends it.
     """
+
     def run() -> str:
         data = api.list_sitemaps(site_url)
         sitemaps = data.get("sitemap", [])
@@ -240,10 +238,11 @@ def list_sitemaps(site_url: str) -> str:
 def inspect_url(site_url: str, url: str) -> str:
     """Run URL Inspection for one URL inside one property.
 
-    Returns the inspection result as compact JSON exactly as the API sends
-    it: index status, coverage, canonical, last crawl, mobile usability if
-    present. Counts against Google's 2,000/day per-property quota.
+    Returns the result as compact JSON exactly as the API sends it: index
+    status, coverage, canonical, last crawl, mobile usability if present.
+    Counts against Google's 2,000/day per-property quota.
     """
+
     def run() -> str:
         data = api.inspect_url(site_url, url)
         return json.dumps(data, separators=(",", ":"))

@@ -27,7 +27,17 @@ def analytics(monkeypatch):
     def fake(site_url, body, session=None):
         calls["site_url"] = site_url
         calls["body"] = body
-        rows = {"rows": [{"keys": ["foo bar"], "clicks": 12, "impressions": 340.0, "ctr": 0.03529411764705882, "position": 3.6441176470588235}]}
+        rows = {
+            "rows": [
+                {
+                    "keys": ["foo bar"],
+                    "clicks": 12,
+                    "impressions": 340.0,
+                    "ctr": 0.03529411764705882,
+                    "position": 3.6441176470588235,
+                }
+            ]
+        }
         return rows
 
     monkeypatch.setattr(server.api, "search_analytics", fake)
@@ -45,7 +55,9 @@ class TestSearchAnalyticsDefaults:
         assert body["endDate"] == "2026-02-17"  # 3 days ago from 2026-02-20
 
     def test_explicit_dates_win(self, analytics, pinned_today):
-        server.search_analytics("sc-domain:example.com", start_date="2025-01-01", end_date="2025-01-31")
+        server.search_analytics(
+            "sc-domain:example.com", start_date="2025-01-01", end_date="2025-01-31"
+        )
         body = analytics["body"]
         assert body["startDate"] == "2025-01-01"
         assert body["endDate"] == "2025-01-31"
@@ -71,10 +83,14 @@ class TestSearchAnalyticsValidation:
         assert "bogus" in out
 
     def test_invalid_search_type_rejected(self, analytics, pinned_today):
-        assert server.search_analytics("sc-domain:example.com", search_type="blog").startswith("ERROR")
+        assert server.search_analytics("sc-domain:example.com", search_type="blog").startswith(
+            "ERROR"
+        )
 
     def test_invalid_data_state_rejected(self, analytics, pinned_today):
-        assert server.search_analytics("sc-domain:example.com", data_state="realtime").startswith("ERROR")
+        assert server.search_analytics("sc-domain:example.com", data_state="realtime").startswith(
+            "ERROR"
+        )
 
     def test_row_limit_above_25000_rejected_not_clamped(self, analytics, pinned_today):
         assert server.search_analytics("sc-domain:example.com", row_limit=25001).startswith("ERROR")
@@ -220,7 +236,14 @@ class TestListSitemaps:
         out = server.list_sitemaps("sc-domain:example.com")
         lines = out.splitlines()
         header = lines[0].split("\t")
-        assert header[:6] == ["path", "last_downloaded", "errors", "warnings", "is_sitemaps_index", "type"]
+        assert header[:6] == [
+            "path",
+            "last_downloaded",
+            "errors",
+            "warnings",
+            "is_sitemaps_index",
+            "type",
+        ]
         assert "contents" in header
         data = lines[1].split("\t")
         contents = json.loads(data[header.index("contents")])

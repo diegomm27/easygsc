@@ -6,9 +6,8 @@ documented flows (plain requests, token refresh, OAuth code exchange,
 redirect chains) all route through the guard.
 """
 
-from unittest import mock
-
 import io
+from unittest import mock
 
 import pytest
 import requests
@@ -129,7 +128,9 @@ class TestRedirectGuard:
         """Defense in depth: even if redirects were followed below send(), the
         final response URL is checked."""
         with mock.patch.object(
-            requests.Session, "send", return_value=make_response(url="https://evil.example.com/final")
+            requests.Session,
+            "send",
+            return_value=make_response(url="https://evil.example.com/final"),
         ):
             session = GuardedSession()
             with pytest.raises(DisallowedHostError, match="evil.example.com"):
@@ -140,13 +141,13 @@ class TestTokenRefreshGuard:
     def test_refresh_transport_request_goes_through_guard(self, mounted):
         """credentials.refresh() sends through google.auth's Request; the
         Request must be built on a guarded session."""
-        session, adapter = mounted(
-            [make_response(body=b'{"access_token":"x","expires_in":3600}')]
-        )
+        session, adapter = mounted([make_response(body=b'{"access_token":"x","expires_in":3600}')])
         request = GoogleAuthRequest(session=session)
         # google.auth Request.__call__ signature: (url, method=..., body=...);
         # it returns a _Response wrapper exposing .status.
-        response = request("https://oauth2.googleapis.com/token", method="POST", body="grant_type=x")
+        response = request(
+            "https://oauth2.googleapis.com/token", method="POST", body="grant_type=x"
+        )
         assert response.status == 200
         assert adapter.calls == ["https://oauth2.googleapis.com/token"]
 

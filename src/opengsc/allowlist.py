@@ -1,23 +1,11 @@
-"""Transport-level network allowlist.
+"""Transport-level network allowlist: the single chokepoint for all outbound HTTP.
 
-This is the single chokepoint for all outbound HTTP in opengsc. Only the four
-Google hosts required for Search Console and OAuth may be contacted; anything
-else raises :class:`DisallowedHostError` before a request is sent.
-
-The guard lives at the ``requests`` transport layer (``Session.send``), not in
-application code, because several independent sessions exist:
-
-- our own API calls (a plain :class:`requests.Session`),
-- token refresh (``google.auth`` refreshes through a separate
-  ``google.auth.transport.requests.Request`` session, and
-  ``AuthorizedSession`` has its own auth-request session),
-- the OAuth code exchange (``requests_oauthlab``/``InstalledAppFlow`` uses its
-  own ``OAuth2Session``).
-
-Redirects are covered: ``requests`` resolves redirects by re-calling
-``Session.send`` for every hop (its HTTPAdapter sends with
-``redirect=False``, so urllib3 never follows redirects internally), and the
-final response URL is checked as defense in depth.
+The guard lives at the ``requests`` transport layer (``Session.send``) because
+several independent sessions exist: our API calls, ``google-auth``'s token
+refresh session, and ``InstalledAppFlow``'s ``OAuth2Session``. Redirects are
+covered: ``requests`` re-calls ``Session.send`` for every hop (its HTTPAdapter
+sends with ``redirect=False``, so urllib3 never follows redirects internally)
+and the final response URL is checked as defense in depth.
 """
 
 from __future__ import annotations
@@ -55,18 +43,16 @@ def check_allowed(url: str) -> str:
 
 
 class GuardedSessionMixin:
-    """Mixin overriding send() to enforce the host allowlist, redirects included."""
+    """Mixin overriding send() to enforce the allowlist, redirects included."""
 
     def send(self, request, **kwargs):  # type: ignore[override]
         check_allowed(request.url)
-        # Explicit Session.send: works both for real subclasses (MRO) and for
-        # instances that receive this function via attach_guard (MethodType),
-        # where zero-arg super() cannot resolve. Neither AuthorizedSession nor
-        # OAuth2Session overrides send(), so nothing is bypassed.
+        # Explicit Session.send: works for real subclasses (MRO) and for
+        # instances guarded via attach_guard (MethodType), where zero-arg
+        # super() cannot resolve. Neither AuthorizedSession nor OAuth2Session
+        # overrides send(), so nothing is bypassed.
         response = requests.Session.send(self, request, **kwargs)
-        # Defense in depth: a response whose final URL left the allowlist
-        # (e.g. redirects followed below send()) is rejected after the fact.
-        check_allowed(response.url)
+        check_allowed(response.url)  # defense in depth against below-send redirects
         return response
 
 
@@ -84,10 +70,5 @@ class GuardedAuthorizedSession(GuardedSessionMixin, _AuthorizedSession):
 
 
 def attach_guard(oauth2session) -> None:
-    """Attach the send() guard to an existing OAuth2Session instance.
-
-    ``requests_oauthlib.OAuth2Session`` subclasses ``requests.Session``, so an
-    instance-level ``send`` override covers every request it makes, including
-    the token exchange performed by ``InstalledAppFlow``.
-    """
+    """Attach the send() guard to an existing OAuth2Session instance."""
     oauth2session.send = types.MethodType(GuardedSessionMixin.send, oauth2session)

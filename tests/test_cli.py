@@ -124,7 +124,9 @@ class TestDoctor:
         assert cli.main(["doctor"]) == 1
         assert "401" in capsys.readouterr().out
 
-    def test_unknown_property_count_failure_does_not_mask_mode(self, config_dir, monkeypatch, capsys):
+    def test_unknown_property_count_failure_does_not_mask_mode(
+        self, config_dir, monkeypatch, capsys
+    ):
         monkeypatch.delenv("OPENGSC_SERVICE_ACCOUNT_FILE", raising=False)
         config_dir.joinpath("token.json").write_text(json.dumps({"refresh_token": "r"}))
         monkeypatch.setattr(
