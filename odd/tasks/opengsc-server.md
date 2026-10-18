@@ -26,14 +26,26 @@ Console. Read-only, small, auditable in one sitting. Python >= 3.10, MIT, packag
 
 ## Tasks
 
-- T1 [S4,S14,S15] Scaffold: pyproject (== pins, ruff), LICENSE MIT, .gitignore, .claude-plugin/plugin.json, .mcp.json, workflows (ci, release-trusted-publishing). Commit: scaffold
-- T2 [S2,S16] allowlist.py: guarded Session.send() + factory wiring (AuthorizedSession auth_request, refresh, flow oauth2session) + tests (blocked host, redirect, refresh, code exchange). Commit: allowlist
-- T3 [S1,S3,S12,S14,S16] auth.py: credential resolution, OAuth flow, atomic 0600 token write, refresh-token print + tests. Commit: auth
-- T4 [S5,S11,S16] api.py: four REST calls, URL encoding, error mapping with hints + tests. Commit: api
-- T5 [S6,S7,S8,S9,S10] server.py: four FastMCP tools, defaults, validation, TSV escaping, metadata block + tests. Commit: server
-- T6 [S13,S14,S16] cli.py: serve/auth/doctor, masked output, exit codes + tests. Commit: cli
-- T7 [S17] README. Commit: readme
-- T8 [S16] uv lock, pytest green, ruff clean, final report (line count, uv tree, deliberate omissions). Commit: finalize
+- T1 [S4,S14,S15] Scaffold — commit 4e0cf9f — DONE
+- T2 [S2,S16] allowlist.py + guard tests — commit b26a789 — DONE
+- T3 [S1,S3,S12,S14,S16] auth.py + tests — commit 9d4cafb — DONE
+- T4 [S5,S11,S16] api.py + tests — commit 17faecf — DONE
+- T5 [S6,S7,S8,S9,S10] server.py + tests — commit bc46234 — DONE
+- T6 [S13,S14,S16] cli.py + tests — commit 4b1cab1 — DONE
+- T7 [S17] README — commit b377ace — DONE
+- T8 [S16] ruff format/trim, final verification — commit e2c5183 — DONE
+
+## Verification evidence
+
+- pytest: 77 passed, 1 skipped (0600-permission test is POSIX-only; runs on
+  the Linux/macOS CI matrix). ruff check + ruff format --check: clean.
+- `claude plugin validate .`: passed with warnings (documentationUrl
+  unknown-field warning from an older local CLI version).
+- `uv run opengsc doctor` smoke test: exit 1 without auth, masked output.
+- mcp pinned to 1.30.0: mcp 2.x removed `mcp.server.fastmcp` (renamed
+  MCPServer); 1.30.0 is the last 1.x of the official SDK.
+- RDD native review switch: unset (global/clone-local) — not run; available
+  on request.
 
 ## Log
 
@@ -41,3 +53,6 @@ Console. Read-only, small, auditable in one sitting. Python >= 3.10, MIT, packag
   test scaffolding and lockfile); later slices stay under ~400 lines each.
 - L1 (user request): "# Build \"opengsc\": a minimal, transparent MCP server for Google Search Console ..." (full original request in conversation; hard requirements, four endpoints, four MCP tools, auth, CLI, plugin packaging, tests, README, process step 1: show tree + signatures, wait for OK).
 - L2 (user amendments after tree/signature review): (1) allowlist at transport level via guarded requests.Session.send(), redirects included, used for AuthorizedSession auth_request + credentials.refresh + flow oauth2session, with tests for refresh, code exchange, redirect bypass; (2) TSV: escape \t and \n, document; inspect_url and sitemaps contents array returned as compact JSON as Google sends, stated in README; do not round ctr/position; (3) add fixed metadata notes: rare-query anonymization breaks query-dimension sums; per-day per-search-type row cap prevents full export of very large sites; (4) 429/quota hint covers rateLimitExceeded AND quotaExceeded; (5) pin runtime deps with == in pyproject (uvx ignores uv.lock), uv.lock for dev/CI, Transparency notes transitives float; use official mcp SDK's mcp.server.fastmcp, not third-party fastmcp. "Go ahead with these changes."
+- L3 (close-out): src/opengsc totals 698 lines (target ~600; the excess is
+  tool docstrings and auditable comments). All 8 tasks done on
+  feature/opengsc-server; push/PR/merge left to the user.
