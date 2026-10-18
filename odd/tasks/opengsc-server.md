@@ -56,3 +56,4 @@ Console. Read-only, small, auditable in one sitting. Python >= 3.10, MIT, packag
 - L3 (close-out): src/opengsc totals 698 lines (target ~600; the excess is
   tool docstrings and auditable comments). All 8 tasks done on
   feature/opengsc-server; push/PR/merge left to the user.
+- L4: Pushed to github.com/diegomm27/opengsc (main merged no-ff from feature/opengsc-server, both branches pushed). Added .claude-plugin/marketplace.json for one-command plugin install; README rewritten for public use.
