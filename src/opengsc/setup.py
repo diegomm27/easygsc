@@ -24,13 +24,67 @@ API_URL = "https://console.cloud.google.com/apis/library/searchconsole.googleapi
 CONSENT_URL = "https://console.cloud.google.com/auth/overview"
 PUBLISH_URL = "https://console.cloud.google.com/auth/audience"
 CLIENT_URL = "https://console.cloud.google.com/auth/clients"
+BRANDING_URL = "https://console.cloud.google.com/auth/branding"
+
+# Google requires a home page and privacy policy link before an external app can be
+# published. They point at the user's own site; opengsc's privacy statement (the
+# README's security section) is the fallback for sites without a privacy page.
+PRIVACY_URL = "https://github.com/diegomm27/opengsc#security-and-transparency"
+
+CLIENT_STEP = (
+    CLIENT_URL,
+    "Create the OAuth client: click 'Create client' and fill in:\n"
+    "  - Application type: Desktop app (not Web application)\n"
+    "  - Name: opengsc\n"
+    "  - Click 'Create', then 'Download JSON' right away: Google won't show the\n"
+    "    secret again. Leave the file in Downloads; setup picks it up from there.",
+)
 
 STEPS = (
-    (PROJECT_URL, "Create a project (for example 'opengsc') and select it in the picker."),
-    (API_URL, "Enable the Search Console API for that project: click 'Enable'."),
-    (CONSENT_URL, "Consent screen: External, app name 'opengsc', your emails."),
-    (PUBLISH_URL, "Publishing does not expose your data and avoids the 7-day login expiry."),
-    (CLIENT_URL, "Create a 'Desktop app' OAuth client, then click 'Download JSON'."),
+    (
+        PROJECT_URL,
+        "Create a Google Cloud project:\n"
+        "  - Project name: opengsc (any name works)\n"
+        "  - Click 'Create', then select it in the project picker at the top.",
+    ),
+    (
+        API_URL,
+        "Enable the Search Console API:\n"
+        "  - Check that the project picker shows your new project.\n"
+        "  - Click 'Enable'.",
+    ),
+    (
+        CONSENT_URL,
+        "Set up the consent screen: click 'Get started' and fill in:\n"
+        "  - App name: opengsc\n"
+        "  - User support email: your email\n"
+        "  - Audience: External\n"
+        "  - Contact information: your email\n"
+        "  - Accept the policy, then click 'Create'.",
+    ),
+    CLIENT_STEP,
+    (
+        BRANDING_URL,
+        "Fill in Branding (Google won't let you publish without these links):\n"
+        "  - App logo: leave it empty; uploading one forces Google verification.\n"
+        "  - Application home page: your website, e.g. https://example.com\n"
+        "  - Privacy policy link: your website's privacy page. If it has none, use\n"
+        f"    {PRIVACY_URL}\n"
+        "  - Terms of service link: leave it empty.\n"
+        "  - Authorized domains: your domain, e.g. example.com (the one verified in\n"
+        "    Search Console). Add github.com too if you used the link above.\n"
+        "  - Click 'Save'.",
+    ),
+    (
+        PUBLISH_URL,
+        "Publish the app: click 'Publish app' and confirm.\n"
+        "  - The status should read 'In production'. In 'Testing', Google expires\n"
+        "    your login every 7 days.\n"
+        "  - Publishing does not expose your data: each login only sees its own\n"
+        "    Search Console.\n"
+        "  - At login, Google warns the app isn't verified. That is expected for a\n"
+        "    personal app: click 'Advanced', then 'Go to opengsc'.",
+    ),
 )
 
 
@@ -124,7 +178,7 @@ def _obtain_client(no_browser: bool) -> Path:
             return source
         except WebClientError as exc:
             print(_redact(str(exc)))
-            _step(*STEPS[-1], no_browser)
+            _step(*CLIENT_STEP, no_browser)
             found = find_downloaded()
             source = found if found != source else None
         except SetupError as exc:

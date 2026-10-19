@@ -33,8 +33,9 @@ It walks you through the Google Cloud steps one at a time, opening the right pag
 1. Create a project.
 2. Enable the Search Console API.
 3. Configure the consent screen (**External**).
-4. Publish the app.
-5. Create a **Desktop app** OAuth client and download its JSON.
+4. Create a **Desktop app** OAuth client and download its JSON.
+5. Fill in Branding with your website's links (no logo).
+6. Publish the app.
 
 Then it finds the JSON in your Downloads folder (or asks for the path), checks it is a Desktop client, copies it to `~/.config/opengsc/client_secret.json` with `0600` permissions, runs the Google login, checks that your properties are readable, and prints the snippet to connect Claude.
 
@@ -105,15 +106,23 @@ This gives opengsc permission to ask Google for your data. You do it once.
    - Contact email: your email
    - Accept the policy and click **Create**.
 
-4. **Publish the app.** Open [Audience](https://console.cloud.google.com/auth/audience) and click **Publish app**, then confirm. The status should read **In production**.
-
-   - *Why:* in *Testing* mode, Google expires your login every 7 days.
-   - *Is it safe?* Yes. Publishing does **not** make your data public. Anyone who logs in through it only sees their own Search Console, and nobody can read yours without your Google login.
-
-5. **Create the client.** Open [Clients](https://console.cloud.google.com/auth/clients), click **Create client**:
+4. **Create the client.** Open [Clients](https://console.cloud.google.com/auth/clients), click **Create client**:
    - Application type: **Desktop app** (not *Web application*)
    - Name: `opengsc`
    - Click **Create**, then **Download JSON** right away. Google won't show the secret again.
+
+5. **Fill in Branding.** Open [Branding](https://console.cloud.google.com/auth/branding). Google won't let you publish without these links:
+   - App logo: leave it **empty**. Uploading one forces Google verification.
+   - Application home page: your website, e.g. `https://example.com`
+   - Privacy policy link: your website's privacy page. If it has none, use `https://github.com/diegomm27/opengsc#security-and-transparency`
+   - Terms of service link: leave it empty.
+   - Authorized domains: your domain, e.g. `example.com` (the one you verified in Search Console). Add `github.com` too if you used the link above.
+   - Click **Save**.
+
+6. **Publish the app.** Open [Audience](https://console.cloud.google.com/auth/audience) and click **Publish app**, then confirm. The status should read **In production**.
+
+   - *Why:* in *Testing* mode, Google expires your login every 7 days.
+   - *Is it safe?* Yes. Publishing does **not** make your data public. Anyone who logs in through it only sees their own Search Console, and nobody can read yours without your Google login.
 
 ### 2. Put the JSON file in place
 
@@ -218,7 +227,7 @@ The output ends with a metadata block. `more_may_exist: true` means the page was
 | `No OAuth client configured` | Run `opengsc setup`, or check the path and name (Manual setup, step 2). |
 | `auth` fails right away with a valid-looking file | The client must be **Desktop app**. Open the JSON: it should start with `{"installed":`. If it starts with `{"web":`, create a new Desktop client. |
 | "Google hasn't verified this app" | Normal. Click **Advanced → Go to opengsc**. |
-| `401` / `invalid_grant` | Login expired or was revoked. Usually the app was left in *Testing*: publish it (Manual setup, step 1.4), then run `opengsc auth` again. |
+| `401` / `invalid_grant` | Login expired or was revoked. Usually the app was left in *Testing*: publish it (Manual setup, step 1.6), then run `opengsc auth` again. |
 | `403` / "User does not have permission" | Wrong property name or no access. Use the exact string from `list_sites()`: `sc-domain:example.com` for domain properties, `https://example.com/` (with the trailing slash) for URL-prefix ones. |
 | `doctor` shows 0 properties | You logged in with an account that has no Search Console access. Run `auth` again with the right one. |
 | Claude doesn't see the tools | Fully restart Claude Desktop. In Claude Code, run `claude mcp list`. |

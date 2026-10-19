@@ -45,6 +45,10 @@ def write_client(path, client_id="cid", secret=SECRET, key="installed"):
     return path
 
 
+# One Enter per walkthrough step, then decline deleting the download.
+WALKTHROUGH = ("",) * 7
+
+
 def feed(*answers):
     answers = iter(answers)
     return lambda prompt="": next(answers)
@@ -143,6 +147,7 @@ class TestObtainClient:
         assert setup._obtain_client(no_browser=True) == desktop
         out = capsys.readouterr().out
         assert setup.CLIENT_URL in out
+        assert setup.PUBLISH_URL not in out
         assert "Desktop app" in out
 
     def test_invalid_json_asks_for_a_path(self, downloads, monkeypatch, capsys):
@@ -261,14 +266,12 @@ class TestWalkthrough:
         monkeypatch.setattr(setup.auth, "run_oauth_flow", fake_auth(config_dir, calls))
         opener = mock.Mock(return_value=True)
         monkeypatch.setattr(setup.webbrowser, "open", opener)
-        # Five "Press Enter" steps, then decline deleting the download.
-        monkeypatch.setattr("builtins.input", feed("", "", "", "", "", ""))
+        monkeypatch.setattr("builtins.input", feed(*WALKTHROUGH))
 
         assert setup.run(no_browser=True) == 0
         out = capsys.readouterr().out
-        for url in (setup.PROJECT_URL, setup.API_URL, setup.CONSENT_URL, setup.PUBLISH_URL):
+        for url, _ in setup.STEPS:
             assert url in out
-        assert setup.CLIENT_URL in out
         assert calls == [True]
         opener.assert_not_called()
         assert "claude mcp add opengsc" in out
@@ -282,17 +285,45 @@ class TestWalkthrough:
         monkeypatch.setattr(setup.auth, "run_oauth_flow", fake_auth(config_dir))
         opener = mock.Mock(return_value=True)
         monkeypatch.setattr(setup.webbrowser, "open", opener)
-        monkeypatch.setattr("builtins.input", feed("", "", "", "", "", ""))
+        monkeypatch.setattr("builtins.input", feed(*WALKTHROUGH))
 
         assert setup.run() == 0
-        assert opener.call_count == 5
+        # The client is created right after the consent screen, as the console offers
+        # it there; Google only lets you publish once Branding has its links.
+        assert [c.args[0] for c in opener.call_args_list] == [
+            setup.PROJECT_URL,
+            setup.API_URL,
+            setup.CONSENT_URL,
+            setup.CLIENT_URL,
+            setup.BRANDING_URL,
+            setup.PUBLISH_URL,
+        ]
+
+    def test_branding_step_lists_the_links_and_warns_about_the_logo(
+        self, config_dir, downloads, monkeypatch, capsys
+    ):
+        write_client(downloads / "client_secret_1.json")
+        doctor_ok(monkeypatch)
+        monkeypatch.setattr(setup.auth, "run_oauth_flow", fake_auth(config_dir))
+        monkeypatch.setattr("builtins.input", feed(*WALKTHROUGH))
+
+        assert setup.run(no_browser=True) == 0
+        out = capsys.readouterr().out
+        branding = out[out.index("Fill in Branding") : out.index(setup.BRANDING_URL)]
+        # The consent screen belongs to the user's own app: it points at their site,
+        # whose domain they already verified in Search Console.
+        assert "your website" in branding
+        assert "your domain" in branding
+        assert "logo" in branding.lower()
+        # Fallback for sites without a privacy page.
+        assert setup.PRIVACY_URL in branding
 
     def test_the_secret_never_reaches_stdout(self, config_dir, downloads, monkeypatch, capsys):
         write_client(downloads / "client_secret_1.json")
         doctor_ok(monkeypatch)
         monkeypatch.setattr(setup.auth, "run_oauth_flow", fake_auth(config_dir))
         monkeypatch.setattr(setup.webbrowser, "open", mock.Mock(return_value=True))
-        monkeypatch.setattr("builtins.input", feed("", "", "", "", "", ""))
+        monkeypatch.setattr("builtins.input", feed(*WALKTHROUGH))
 
         assert setup.run(no_browser=True) == 0
         captured = capsys.readouterr()
