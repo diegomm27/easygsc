@@ -164,3 +164,288 @@ class TestAddServer:
 
         assert path.read_text() == original
         assert not [p for p in tmp_path.iterdir() if p.suffix == ".tmp"]
+
+
+# Captured at import, before the autouse guard in conftest swaps APPS for ().
+REAL = {app.name: app for app in connect.APPS}
+COMMAND = ("/abs/uvx", ["opengsc@0.2.0"])
+
+
+def feed(*answers):
+    answers = iter(answers)
+    return lambda prompt="": next(answers)
+
+
+@pytest.fixture
+def launch(monkeypatch):
+    monkeypatch.setattr(connect, "launch_command", lambda: COMMAND)
+    on_path(monkeypatch)  # nothing on PATH unless a test says so
+
+
+def json_app(folder, name, *, installed=False, **kwargs):
+    path = folder / name / "mcp.json"
+    if installed:
+        path.parent.mkdir(parents=True)
+    return connect.App(name, f"Restart {name}.", configs=lambda: [path], **kwargs), path
+
+
+class TestMenu:
+    def test_enter_connects_the_apps_found_on_this_computer(
+        self, tmp_path, launch, monkeypatch, capsys
+    ):
+        found, found_path = json_app(tmp_path, "Found", installed=True)
+        other, other_path = json_app(tmp_path, "Missing")
+        monkeypatch.setattr("builtins.input", feed(""))
+
+        assert connect.choose_and_connect([found, other]) == 0
+
+        out = capsys.readouterr().out
+        assert "1. Found  (found on this computer)" in out
+        assert "2. Missing\n" in out
+        assert json.loads(found_path.read_text()) == {
+            "mcpServers": {"opengsc": {"command": "/abs/uvx", "args": ["opengsc@0.2.0"]}}
+        }
+        assert not other_path.exists()
+        assert "Connected." in out and "Next: Restart Found." in out
+        assert out.rstrip().endswith(connect.TRY_IT)
+
+    def test_typed_numbers_pick_the_apps(self, tmp_path, launch, monkeypatch):
+        found, found_path = json_app(tmp_path, "Found", installed=True)
+        other, other_path = json_app(tmp_path, "Missing")
+        monkeypatch.setattr("builtins.input", feed(" 2 "))
+        assert connect.choose_and_connect([found, other]) == 0
+        assert not found_path.exists()
+        assert other_path.is_file()
+
+    def test_zero_skips_and_writes_nothing(self, tmp_path, launch, monkeypatch, capsys):
+        found, found_path = json_app(tmp_path, "Found", installed=True)
+        monkeypatch.setattr("builtins.input", feed("0"))
+        assert connect.choose_and_connect([found]) == 0
+        assert not found_path.exists()
+        assert "opengsc connect" in capsys.readouterr().out
+
+    def test_invalid_answers_ask_again(self, tmp_path, launch, monkeypatch, capsys):
+        app, path = json_app(tmp_path, "App")
+        monkeypatch.setattr("builtins.input", feed("cursor", "9", "1,1"))
+        assert connect.choose_and_connect([app]) == 0
+        assert capsys.readouterr().out.count("Please type numbers from 1 to 2") == 2
+        assert path.is_file()
+
+    def test_another_app_prints_the_settings_to_copy(self, launch, monkeypatch, capsys):
+        monkeypatch.setattr(
+            connect, "launch_command", lambda: ("/abs/uv", ["run", "--directory", "/my dir", "x"])
+        )
+        monkeypatch.setattr("builtins.input", feed(""))  # nothing found: Enter = another app
+
+        assert connect.choose_and_connect([]) == 0
+
+        out = capsys.readouterr().out
+        assert "Command:  /abs/uv" in out
+        assert "      run\n      --directory\n      /my dir\n      x\n" in out
+        snippet = out[out.index("{") : out.rindex("}") + 1]
+        assert json.loads(snippet) == {
+            "mcpServers": {
+                "opengsc": {"command": "/abs/uv", "args": ["run", "--directory", "/my dir", "x"]}
+            }
+        }
+        assert "web browser" in out
+
+    def test_quit_cancels_without_writing(self, tmp_path, launch, monkeypatch, capsys):
+        app, path = json_app(tmp_path, "App", installed=True)
+        monkeypatch.setattr(connect, "APPS", (app,))
+        monkeypatch.setattr("builtins.input", feed("q"))
+        assert connect.run() == 2
+        assert "connect cancelled" in capsys.readouterr().err
+        assert not path.exists()
+
+
+class TestJsonApps:
+    def test_a_file_it_cannot_edit_gets_manual_steps_and_the_rest_still_run(
+        self, tmp_path, launch, monkeypatch, capsys
+    ):
+        broken, broken_path = json_app(tmp_path, "Broken", installed=True)
+        broken_path.write_text('{\n  // mine\n  "mcpServers": {}\n}')
+        fine, fine_path = json_app(tmp_path, "Fine", installed=True)
+        monkeypatch.setattr("builtins.input", feed(""))
+
+        assert connect.choose_and_connect([broken, fine]) == 1
+
+        out = capsys.readouterr().out
+        assert "Could not connect it automatically" in out
+        assert f"Do it by hand: open {broken_path}" in out
+        assert '"opengsc": {' in out
+        assert broken_path.read_text() == '{\n  // mine\n  "mcpServers": {}\n}'
+        assert fine_path.is_file()
+        assert "manual step" in out
+
+    def test_an_app_that_rewrites_its_config_is_closed_first(
+        self, tmp_path, launch, monkeypatch, capsys
+    ):
+        app, path = json_app(tmp_path, "Desk", installed=True, close_first=True)
+        prompts = []
+
+        def answer(prompt=""):
+            prompts.append((prompt, path.exists()))
+            return ""
+
+        monkeypatch.setattr("builtins.input", answer)
+        assert connect.choose_and_connect([app]) == 0
+        assert "Quit Desk completely" in capsys.readouterr().out
+        closed = [p for p in prompts if "once it is closed" in p[0]]
+        assert closed == [(closed[0][0], False)]  # asked once, before the file was written
+        assert path.is_file()
+
+    def test_every_existing_config_copy_is_updated_after_one_question(
+        self, tmp_path, launch, monkeypatch, capsys
+    ):
+        copies = [tmp_path / "a" / "c.json", tmp_path / "b" / "c.json"]
+        for copy in copies:
+            copy.parent.mkdir()
+            copy.write_text(json.dumps({"mcpServers": {"opengsc": {"command": "old"}}}))
+        app = connect.App("Desk", "Reopen it.", configs=lambda: copies)
+        monkeypatch.setattr("builtins.input", feed("", "y"))
+
+        assert connect.choose_and_connect([app]) == 0
+
+        for copy in copies:
+            assert json.loads(copy.read_text())["mcpServers"]["opengsc"]["command"] == "/abs/uvx"
+        out = capsys.readouterr().out
+        assert "replaced the old opengsc entry" in out
+        assert out.count("Backup of the previous file") == 2
+
+    def test_entry_shapes(self):
+        assert REAL["VS Code (GitHub Copilot)"].section == "servers"
+        assert REAL["VS Code (GitHub Copilot)"].entry(*COMMAND) == {
+            "type": "stdio",
+            "command": "/abs/uvx",
+            "args": ["opengsc@0.2.0"],
+        }
+        assert REAL["Cursor"].entry(*COMMAND)["type"] == "stdio"
+        assert REAL["Claude Desktop"].entry(*COMMAND) == {
+            "command": "/abs/uvx",
+            "args": ["opengsc@0.2.0"],
+        }
+
+
+@pytest.fixture
+def home(tmp_path, monkeypatch):
+    monkeypatch.setattr(connect.Path, "home", classmethod(lambda cls: tmp_path))
+    for var in ("APPDATA", "LOCALAPPDATA", "XDG_CONFIG_HOME", "CODEX_HOME"):
+        monkeypatch.delenv(var, raising=False)
+    return tmp_path
+
+
+class TestRealAppPaths:
+    def test_claude_desktop_on_windows_includes_the_store_copy(self, home, monkeypatch):
+        monkeypatch.setattr(connect.sys, "platform", "win32")
+        monkeypatch.setenv("APPDATA", str(home / "Roaming"))
+        monkeypatch.setenv("LOCALAPPDATA", str(home / "Local"))
+        classic = home / "Roaming" / "Claude" / "claude_desktop_config.json"
+        store = (
+            home / "Local" / "Packages" / "Claude_pzs8sxrjxfjjc"
+            / "LocalCache" / "Roaming" / "Claude" / "claude_desktop_config.json"
+        )  # fmt: skip
+        classic.parent.mkdir(parents=True)
+        store.parent.mkdir(parents=True)
+        assert REAL["Claude Desktop"].targets() == [classic, store]
+
+    def test_claude_desktop_on_macos(self, home, monkeypatch):
+        monkeypatch.setattr(connect.sys, "platform", "darwin")
+        expected = home / "Library" / "Application Support" / "Claude"
+        assert REAL["Claude Desktop"].targets() == [expected / "claude_desktop_config.json"]
+
+    def test_vs_code_on_linux_follows_xdg(self, home, monkeypatch):
+        monkeypatch.setattr(connect.sys, "platform", "linux")
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(home / "xdg"))
+        assert REAL["VS Code (GitHub Copilot)"].targets() == [
+            home / "xdg" / "Code" / "User" / "mcp.json"
+        ]
+
+    def test_windsurf_file_is_used_only_when_it_is_there(self, home, monkeypatch):
+        monkeypatch.setattr(connect.sys, "platform", "linux")
+        devin = home / ".config" / "devin" / "mcp_config.json"
+        windsurf = home / ".codeium" / "windsurf" / "mcp_config.json"
+        assert REAL["Windsurf / Devin Desktop"].targets() == [devin]
+        windsurf.parent.mkdir(parents=True)
+        assert REAL["Windsurf / Devin Desktop"].targets() == [windsurf]
+
+    def test_gemini_is_not_found_from_the_folder_it_shares(self, home, monkeypatch):
+        on_path(monkeypatch)
+        (home / ".gemini" / "config").mkdir(parents=True)
+        assert not REAL["Gemini CLI"].found()
+        assert REAL["Google Antigravity"].found()
+        (home / ".gemini" / "settings.json").write_text("{}")
+        assert REAL["Gemini CLI"].found()
+
+
+class TestCliApps:
+    def test_claude_code_adds_a_user_scoped_server(self, launch, monkeypatch, capsys):
+        on_path(monkeypatch, claude="/bin/claude")
+        run = mock.Mock(return_value=(0, ""))
+        monkeypatch.setattr(connect, "_run", run)
+        monkeypatch.setattr("builtins.input", feed(""))
+
+        assert connect.choose_and_connect([REAL["Claude Code"]]) == 0
+
+        run.assert_called_once_with(
+            ["/bin/claude", "mcp", "add", "--scope", "user", "opengsc", "--"]
+            + ["/abs/uvx", "opengsc@0.2.0"]
+        )
+        assert "Next: Start a new Claude Code session." in capsys.readouterr().out
+
+    @pytest.mark.parametrize("answer", ["n", "y"])
+    def test_claude_code_replaces_an_existing_entry_only_after_a_yes(
+        self, launch, monkeypatch, capsys, answer
+    ):
+        on_path(monkeypatch, claude="/bin/claude")
+        run = mock.Mock(
+            side_effect=[
+                (1, "MCP server opengsc already exists in user config\n"),
+                (0, ""),
+                (0, ""),
+            ]
+        )
+        monkeypatch.setattr(connect, "_run", run)
+        monkeypatch.setattr("builtins.input", feed("", answer))
+
+        assert connect.choose_and_connect([REAL["Claude Code"]]) == 0
+
+        argvs = [c.args[0][1:3] for c in run.call_args_list]
+        if answer == "n":
+            assert argvs == [["mcp", "add"]]
+            assert "Kept your existing opengsc entry" in capsys.readouterr().out
+        else:
+            assert argvs == [["mcp", "add"], ["mcp", "remove"], ["mcp", "add"]]
+            assert "replaced the old opengsc entry" in capsys.readouterr().out
+
+    @pytest.mark.parametrize("answer", ["n", "y"])
+    def test_codex_asks_before_overwriting_its_entry(self, home, launch, monkeypatch, answer):
+        on_path(monkeypatch, codex="/bin/codex")
+        (home / ".codex").mkdir()
+        (home / ".codex" / "config.toml").write_text('[mcp_servers.opengsc]\ncommand = "old"\n')
+        run = mock.Mock(return_value=(0, ""))
+        monkeypatch.setattr(connect, "_run", run)
+        monkeypatch.setattr("builtins.input", feed("", answer))
+
+        assert connect.choose_and_connect([REAL["Codex (OpenAI)"]]) == 0
+
+        if answer == "n":
+            run.assert_not_called()
+        else:
+            run.assert_called_once_with(
+                ["/bin/codex", "mcp", "add", "opengsc", "--", "/abs/uvx", "opengsc@0.2.0"]
+            )
+
+    def test_a_missing_cli_prints_the_command_to_run(self, launch, monkeypatch, capsys):
+        monkeypatch.setattr("builtins.input", feed("1"))
+        assert connect.choose_and_connect([REAL["Claude Code"]]) == 1
+        out = capsys.readouterr().out
+        assert "the 'claude' command was not found" in out
+        assert "claude mcp add --scope user opengsc -- /abs/uvx opengsc@0.2.0" in out
+
+    def test_a_failing_cli_reports_its_last_line(self, launch, monkeypatch, capsys):
+        on_path(monkeypatch, codex="/bin/codex")
+        monkeypatch.setattr(connect, "_run", mock.Mock(return_value=(2, "noise\nconfig locked\n")))
+        monkeypatch.setattr("builtins.input", feed(""))
+        assert connect.choose_and_connect([REAL["Codex (OpenAI)"]]) == 1
+        assert "'codex mcp add' failed: config locked" in capsys.readouterr().out

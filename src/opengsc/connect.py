@@ -2,25 +2,37 @@
 
 Editing an app's config never loses data: only plain JSON is edited, a timestamped
 backup is written first, the file is replaced atomically and every other entry is
-kept. Nothing here makes network calls.
+kept. Apps with their own CLI (Claude Code, Codex) are registered through it. Nothing
+here makes network calls.
 """
 
 from __future__ import annotations
 
 import json
 import os
+import re
+import shlex
 import shutil
+import subprocess
+import sys
 import tempfile
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from importlib import metadata
 from pathlib import Path
 from urllib.parse import urlparse
 from urllib.request import url2pathname
 
 from . import __version__
+from .prompts import Cancelled, ask, confirm
 
 SERVER_NAME = "opengsc"
+TRY_IT = 'Open your AI app and ask: "List my Search Console sites."'
+BROWSER_ONLY = (
+    "Chats that only run in a web browser (ChatGPT, claude.ai, Gemini on the web) cannot\n"
+    "start programs on your computer, so they cannot use opengsc. Use a desktop app above."
+)
 
 
 class ConnectError(Exception):
@@ -129,3 +141,367 @@ def add_server(
     except OSError as exc:
         raise ConnectError(f"Cannot write {path}: {exc}") from exc
     return ("updated" if current is not None else "added"), backup
+
+
+@dataclass(frozen=True)
+class App:
+    """An AI app opengsc can register itself in.
+
+    A JSON app lists its candidate config files, the default one first. A CLI app is
+    registered through its own command (``<cli> mcp add``), which owns its config.
+    """
+
+    name: str
+    then: str  # what the user does next so the app loads opengsc
+    configs: Callable[[], list[Path]] | None = None
+    section: str = "mcpServers"
+    stdio_type: bool = False  # the entry needs "type": "stdio"
+    close_first: bool = False  # the app may rewrite its config while it runs
+    cli: str | None = None
+    add: Callable[[str, list[str]], list[str]] | None = None  # argv after the cli
+    remove: tuple[str, ...] = ()  # argv after the cli; used when add refuses a duplicate
+    registered: Callable[[], bool] | None = None  # for CLIs that overwrite silently
+    detect: tuple[str, ...] = ()  # executables that show the app is installed
+    found_by_folder: bool = True  # an existing config folder means it is installed
+
+    def targets(self) -> list[Path]:
+        """Every candidate whose folder exists (all get the entry), else the default."""
+        candidates = self.configs() if self.configs else []
+        existing = [path for path in candidates if path.parent.is_dir()]
+        return existing or candidates[:1]
+
+    def found(self) -> bool:
+        names = (*self.detect, self.cli) if self.cli else self.detect
+        if any(shutil.which(name) for name in names):
+            return True
+        candidates = self.configs() if self.configs else []
+        if any(path.is_file() for path in candidates):
+            return True
+        return self.found_by_folder and any(path.parent.is_dir() for path in candidates)
+
+    def entry(self, command: str, args: list[str]) -> dict:
+        entry = {"command": command, "args": list(args)}
+        return {"type": "stdio", **entry} if self.stdio_type else entry
+
+
+def _env_dir(name: str, default: Path) -> Path:
+    value = os.environ.get(name)
+    return Path(value) if value else default
+
+
+def _app_support() -> Path:
+    """Where desktop apps keep per-user settings on this OS."""
+    if sys.platform == "win32":
+        return _env_dir("APPDATA", Path.home() / "AppData" / "Roaming")
+    if sys.platform == "darwin":
+        return Path.home() / "Library" / "Application Support"
+    return _env_dir("XDG_CONFIG_HOME", Path.home() / ".config")
+
+
+def _claude_desktop() -> list[Path]:
+    paths = [_app_support() / "Claude" / "claude_desktop_config.json"]
+    if sys.platform == "win32":
+        # The Microsoft Store build reads a virtualized copy inside its package folder.
+        packages = _env_dir("LOCALAPPDATA", Path.home() / "AppData" / "Local") / "Packages"
+        try:
+            store = sorted(packages.glob("Claude_*"))
+        except OSError:
+            store = []
+        paths += [
+            p / "LocalCache" / "Roaming" / "Claude" / "claude_desktop_config.json" for p in store
+        ]
+    return paths
+
+
+def _devin() -> list[Path]:
+    # Windsurf became Devin Desktop; the old Windsurf file is only used if it is there.
+    root = (
+        _app_support()
+        if sys.platform == "win32"
+        else _env_dir("XDG_CONFIG_HOME", Path.home() / ".config")
+    )
+    return [
+        root / "devin" / "mcp_config.json",
+        Path.home() / ".codeium" / "windsurf" / "mcp_config.json",
+    ]
+
+
+def _codex_config() -> Path:
+    return _env_dir("CODEX_HOME", Path.home() / ".codex") / "config.toml"
+
+
+def _codex_registered() -> bool:
+    try:
+        text = _codex_config().read_text(encoding="utf-8")
+    except OSError:
+        return False
+    return (
+        re.search(r'^\s*\[\s*mcp_servers\s*\.\s*"?opengsc"?\s*\]', text, re.MULTILINE) is not None
+    )
+
+
+APPS: tuple[App, ...] = (
+    App(
+        "Claude Desktop",
+        "Open Claude Desktop again.",
+        configs=_claude_desktop,
+        close_first=True,
+    ),
+    App(
+        "Claude Code",
+        "Start a new Claude Code session.",
+        cli="claude",
+        add=lambda command, args: [
+            "mcp",
+            "add",
+            "--scope",
+            "user",
+            SERVER_NAME,
+            "--",
+            command,
+            *args,
+        ],
+        remove=("mcp", "remove", SERVER_NAME, "--scope", "user"),
+    ),
+    App(
+        "Codex (OpenAI)",
+        "Start a new Codex session.",
+        cli="codex",
+        add=lambda command, args: ["mcp", "add", SERVER_NAME, "--", command, *args],
+        registered=_codex_registered,
+    ),
+    App(
+        "Gemini CLI",
+        "Start a new Gemini CLI session.",
+        configs=lambda: [Path.home() / ".gemini" / "settings.json"],
+        detect=("gemini",),
+        found_by_folder=False,  # ~/.gemini is shared with Antigravity
+    ),
+    App(
+        "Google Antigravity",
+        "Restart Antigravity.",
+        configs=lambda: [Path.home() / ".gemini" / "config" / "mcp_config.json"],
+        detect=("antigravity",),
+    ),
+    App(
+        "Cursor",
+        "Restart Cursor.",
+        configs=lambda: [Path.home() / ".cursor" / "mcp.json"],
+        stdio_type=True,
+        detect=("cursor",),
+    ),
+    App(
+        "VS Code (GitHub Copilot)",
+        "Restart VS Code and use Copilot Chat in Agent mode.",
+        configs=lambda: [_app_support() / "Code" / "User" / "mcp.json"],
+        section="servers",
+        stdio_type=True,
+        detect=("code",),
+    ),
+    App(
+        "Windsurf / Devin Desktop",
+        "Restart Windsurf / Devin Desktop.",
+        configs=_devin,
+        detect=("windsurf", "devin"),
+    ),
+    App(
+        "LM Studio",
+        "Restart LM Studio.",
+        configs=lambda: [Path.home() / ".lmstudio" / "mcp.json"],
+        detect=("lms",),
+    ),
+)
+
+STATUS = {
+    "added": "Connected.",
+    "updated": "Connected (replaced the old opengsc entry).",
+    "unchanged": "Already connected; nothing changed.",
+    "kept": "Kept your existing opengsc entry; nothing changed.",
+}
+
+
+def _run(argv: list[str]) -> tuple[int, str]:
+    """Run an app's own CLI; returns (exit code, combined output)."""
+    try:
+        done = subprocess.run(
+            argv,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            stdin=subprocess.DEVNULL,
+            timeout=120,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return 1, str(exc)
+    return done.returncode, f"{done.stdout or ''}{done.stderr or ''}"
+
+
+def _shell_line(argv: list[str]) -> str:
+    return subprocess.list2cmdline(argv) if os.name == "nt" else shlex.join(argv)
+
+
+def _last_line(output: str) -> str:
+    lines = [line.strip() for line in output.splitlines() if line.strip()]
+    return lines[-1] if lines else "no output"
+
+
+def _ask_replace(app: App) -> Callable[[], bool]:
+    """One replace question per app, even when it has several config files."""
+    answers: list[bool] = []
+
+    def replace() -> bool:
+        if not answers:
+            answers.append(
+                confirm(f"  {app.name} already starts opengsc differently. Replace that? [y/N] ")
+            )
+        return answers[0]
+
+    return replace
+
+
+def _connect_cli(app: App, command: str, args: list[str]) -> tuple[str, list[str]]:
+    exe = shutil.which(app.cli)
+    if not exe:
+        raise ConnectError(f"the '{app.cli}' command was not found. Is {app.name} installed?")
+    replace = _ask_replace(app)
+    status = "added"
+    if app.registered and app.registered():
+        if not replace():
+            return "kept", []
+        status = "updated"
+    code, out = _run([exe, *app.add(command, args)])
+    if code != 0 and app.remove and "already exists" in out.lower():
+        if not replace():
+            return "kept", []
+        code, out = _run([exe, *app.remove])
+        if code != 0:
+            raise ConnectError(f"removing the old entry failed: {_last_line(out)}")
+        status = "updated"
+        code, out = _run([exe, *app.add(command, args)])
+    if code != 0:
+        raise ConnectError(f"'{app.cli} mcp add' failed: {_last_line(out)}")
+    return status, []
+
+
+def _connect_json(app: App, command: str, args: list[str]) -> tuple[str, list[str]]:
+    if app.close_first and app.found():
+        print(f"  Quit {app.name} completely (also from the system tray or menu bar).")
+        ask("  Press Enter once it is closed... ")
+    replace = _ask_replace(app)
+    statuses, notes = [], []
+    for path in app.targets():
+        status, backup = add_server(path, app.section, app.entry(command, args), replace)
+        statuses.append(status)
+        notes.append(f"Settings file: {path}")
+        if backup:
+            notes.append(f"Backup of the previous file: {backup}")
+    for status in ("kept", "updated", "added"):
+        if status in statuses:
+            return status, notes
+    return "unchanged", notes
+
+
+def _print_manual(app: App, command: str, args: list[str]) -> None:
+    targets = app.targets()
+    if app.cli:
+        print("  Do it by hand: run this in a terminal:")
+        print(f"    {_shell_line([app.cli, *app.add(command, args)])}")
+    elif targets:
+        snippet = json.dumps({app.section: {SERVER_NAME: app.entry(command, args)}}, indent=2)
+        print(f"  Do it by hand: open {targets[0]} and add this")
+        print(f'  (if "{app.section}" is already there, add only the "{SERVER_NAME}" part):')
+        print("\n".join(f"    {line}" for line in snippet.splitlines()))
+    else:
+        _print_generic(command, args)
+
+
+def _print_generic(command: str, args: list[str]) -> None:
+    snippet = json.dumps(
+        {"mcpServers": {SERVER_NAME: {"command": command, "args": args}}}, indent=2
+    )
+    print("\nAnother app")
+    print('  In its settings, look for "MCP servers" (sometimes "Tools", "Connectors" or')
+    print('  "Integrations") and add a local server, also called "stdio":')
+    print(f"    Name:     {SERVER_NAME}")
+    print(f"    Command:  {command}")
+    print("    Arguments, one per line, in this order:")
+    for arg in args:
+        print(f"      {arg}")
+    print("  If it asks for JSON instead, use:")
+    print("\n".join(f"    {line}" for line in snippet.splitlines()))
+    print("\n".join(f"  {line}" for line in BROWSER_ONLY.splitlines()))
+
+
+def _connect_one(app: App, command: str, args: list[str]) -> bool:
+    print(f"\n{app.name}")
+    try:
+        connect_app = _connect_cli if app.cli else _connect_json
+        status, notes = connect_app(app, command, args)
+    except ConnectError as exc:
+        print(f"  Could not connect it automatically: {exc}")
+        _print_manual(app, command, args)
+        return False
+    print(f"  {STATUS[status]}")
+    for note in notes:
+        print(f"  {note}")
+    if status in ("added", "updated"):
+        print(f"  Next: {app.then}")
+    return True
+
+
+def _choose(apps: Sequence[App]) -> list[int]:
+    found = [number for number, app in enumerate(apps, 1) if app.found()]
+    other = len(apps) + 1
+    print("\nConnect opengsc to your AI apps")
+    for number, app in enumerate(apps, 1):
+        print(f"  {number}. {app.name}{'  (found on this computer)' if number in found else ''}")
+    print(f"  {other}. Another app: show the settings to copy")
+    default = found or [other]
+    shown = ",".join(map(str, default))
+    while True:
+        raw = ask(f"Type the numbers of the apps you use (e.g. 1,3). Enter = {shown}, 0 = skip: ")
+        raw = raw.strip()
+        if not raw:
+            return default
+        if raw == "0":
+            return []
+        try:
+            picks = sorted({int(part) for part in raw.replace(",", " ").split()})
+        except ValueError:
+            picks = []
+        if picks and all(1 <= pick <= other for pick in picks):
+            return picks
+        print(f"Please type numbers from 1 to {other}, like 1,3 (or q to quit).")
+
+
+def choose_and_connect(apps: Sequence[App] | None = None) -> int:
+    """Menu + connect: 0 when every chosen app is set, 1 when one needs a manual step.
+
+    Raises Cancelled on q/quit/EOF so each caller can word the cancellation.
+    """
+    apps = APPS if apps is None else apps
+    command, args = launch_command()
+    picks = _choose(apps)
+    if not picks:
+        print("No apps connected. Run 'opengsc connect' any time to add one.")
+        return 0
+    failed = False
+    for pick in picks:
+        if pick > len(apps):
+            _print_generic(command, args)
+        elif not _connect_one(apps[pick - 1], command, args):
+            failed = True
+    print(f"\n{TRY_IT}")
+    if failed:
+        print("Some apps still need the manual step shown above.")
+    return 1 if failed else 0
+
+
+def run() -> int:
+    """``opengsc connect``: 0 success, 1 an app needs a manual step, 2 cancelled."""
+    try:
+        return choose_and_connect()
+    except Cancelled:
+        print("connect cancelled; run 'opengsc connect' again when ready.", file=sys.stderr)
+        return 2
