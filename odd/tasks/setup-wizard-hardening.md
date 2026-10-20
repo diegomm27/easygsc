@@ -30,6 +30,15 @@ this is a new candidate made of new commits on `feat/setup-wizard`.
   actionable line on stderr with the secrets redacted (part of the R4-2…R4-6
   error-branch follow-up). The Downloads search also covers a OneDrive-redirected
   `Downloads` folder, and the path prompt names every folder it searched.
+- S9 (review follow-up, L8): fix the findings of the blocked review payload
+  `review-resilience-1-eee509194f48.json` that hold against the code: (a)
+  `connect._write_atomic` must leave the rewritten app config writable by its
+  owner even when the app's file was read-only, keeping its other permission
+  bits; (b) cancelling `connect` after some apps were already written must say
+  which files changed before it reports the cancellation; (c) the `_ask_replace`
+  claim (one question per app, two Claude Desktop copies) and the S8/T9 wording
+  about "offers to log in again" are checked against the code and either refuted
+  with evidence or corrected in this document.
 
 ## Tasks
 
@@ -51,7 +60,11 @@ this is a new candidate made of new commits on `feat/setup-wizard`.
   same commit — DONE
 - T9 [S8] the doctor check inside setup cannot traceback either: `_doctor_ok()`
   reports a crashing check (a revoked token makes google-auth raise
-  `RefreshError`) and the wizard offers to log in again — same commit — DONE
+  `RefreshError`) and the wizard reports it instead of crashing — same commit — DONE
+- T10 [S9] fix the review findings that hold: `_write_atomic` keeps the owner
+  write bit, a cancel after partial writes names the files already changed,
+  `_ask_replace` checked with evidence, and the T9 wording corrected — see L8 —
+  DONE (S9c refuted, no behaviour change)
 
 ## Pending follow-ups (out of scope)
 
@@ -108,6 +121,39 @@ this is a new candidate made of new commits on `feat/setup-wizard`.
     a path/answer and the loop continued) before `Cancelled`.
   - T3: suppression/redaction tests failed (no `print_refresh_token` kwarg raw
     secret printed) before the auth parameter and `_redact`.
+  - T10: `test_a_read_only_config_is_rewritten_and_stays_writable_by_its_owner`
+    failed with `ConnectError: Cannot write …: [WinError 5] Acceso denegado`
+    (copying the read-only mode to the temporary file makes `os.replace` refuse
+    the read-only destination; on POSIX the replace succeeds but the mode stays
+    `0o444`) and
+    `test_a_cancel_after_a_connected_app_names_what_was_already_written` failed
+    with `ValueError: substring not found` (nothing was printed about the first
+    app) before `_write_atomic` restored the owner write bit and
+    `choose_and_connect` printed the writes before the cancel.
+- `uv run pytest -q` after T10 and the parent's review of the fix: 182 passed,
+  3 skipped. The parent narrowed `_write_atomic`: the owner write bit is only
+  added to the *destination* on Windows, where `os.replace` refuses a read-only
+  target; on POSIX the old file keeps its mode until the replace succeeds, so a
+  failed write cannot widen an app's permissions. Pinned by the new POSIX-only
+  `test_a_failed_replace_leaves_a_protected_config_read_only`.
+- S9c is refuted, so no behaviour changed: `_ask_replace`
+  (`src/opengsc/connect.py:367-376`) caches the first answer in `answers`, and
+  `_connect_json` (`src/opengsc/connect.py:414-418`) builds one callable per app
+  and passes that same callable to every config copy, so each app is asked once
+  however many copies it has. `tests/test_connect.py:385`
+  `test_every_existing_config_copy_is_updated_after_one_question` feeds exactly
+  one `y` for two copies in the same call (a second question would exhaust the
+  `feed` iterator and raise `StopIteration`), and
+  `test_claude_code_replaces_an_existing_entry_only_after_a_yes` feeds one answer
+  too. `_authenticate` (`src/opengsc/setup.py:293-306`) prints
+  `auth check failed; see the report above.` and returns 1 with no retry, so
+  `setup.py` is unchanged.
+- S9b output: a cancel now ends with `Already written before the cancel:`, the
+  app name, its status line and its `Settings file:`/`Backup of the previous
+  file:` notes; `run()` and `setup._connect_apps` keep exit code 2 and their
+  existing messages. S9a keeps `stat.S_IREAD | stat.S_IWRITE` for the owner and
+  copies the rest of the original mode, and it changes nothing when the config
+  was already writable.
 - `uv run pytest -q`: 114 passed, 2 skipped (0600 tests are POSIX-only).
 - `uv run ruff check src tests`: clean.
 - `uv run ruff format --check src tests`: clean.
@@ -152,3 +198,14 @@ this is a new candidate made of new commits on `feat/setup-wizard`.
   and no traceback. `_download_dirs()` on this machine returns the real
   `~/Downloads` path. `auth --help`, `setup --help`, the top-level help and
   `doctor` are unchanged; only `setup` output changed.
+- L8 (new candidate after the blocked review): the `review-resilience` payload
+  that Go refused for missing proof references (preserved at
+  `.git/gentle-ai/rejected-results/review-b19c27339f622fdd/`) is unadmitted, so
+  its findings are leads, not authority. Checked against the code: the
+  `_write_atomic` read-only mode loss (S9a) and the unreported partial writes on
+  cancel (S9b) hold; the `_ask_replace` claim does not (the closure already
+  caches one answer per app, as its docstring and tests say); and the review was
+  right that T9 overstated the doctor failure path, which prints
+  `auth check failed` and returns 1. User decision L9.
+- L9 (user decision): "Corregir el candidato y review nuevo" — fix those items,
+  commit, push, and start a new review lineage for the new candidate.

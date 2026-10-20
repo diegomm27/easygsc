@@ -1,6 +1,7 @@
 """Tests for connecting opengsc to AI apps: files, PATH and app CLIs all faked."""
 
 import json
+import os
 import stat
 from unittest import mock
 
@@ -194,6 +195,52 @@ class TestAddServer:
             for leftover in tmp_path.iterdir():
                 leftover.chmod(stat.S_IREAD | stat.S_IWRITE)
 
+    def test_a_read_only_config_is_rewritten_and_stays_writable_by_its_owner(self, tmp_path):
+        # Some apps protect their config; opengsc must not leave it read-only, or the
+        # next connect (and, on Windows, this very replace) cannot write it again.
+        path = tmp_path / "config.json"
+        path.write_text(json.dumps({"mcpServers": {"other": {"command": "x", "args": []}}}))
+        path.chmod(0o444)
+        try:
+            status, _ = connect.add_server(path, "mcpServers", ENTRY, never_asked)
+
+            assert status == "added"
+            assert json.loads(path.read_text()) == {
+                "mcpServers": {"other": {"command": "x", "args": []}, "opengsc": ENTRY}
+            }
+            if os.name == "posix":  # Windows only tracks the read-only attribute
+                mode = stat.S_IMODE(path.stat().st_mode)
+                assert mode & stat.S_IWUSR, "the owner must be able to rewrite it next time"
+                assert mode & stat.S_IREAD
+                assert mode == 0o644  # owner write added, the group/other bits kept
+
+            # The next connect must be able to update the same file again.
+            for stale in tmp_path.glob("*.bak"):  # a later run: no same-second name clash
+                stale.chmod(stat.S_IREAD | stat.S_IWRITE)
+                stale.unlink()
+            newer = {"command": "/abs/uvx", "args": ["opengsc@0.3.0"]}
+            assert connect.add_server(path, "mcpServers", newer, lambda: True)[0] == "updated"
+            assert json.loads(path.read_text())["mcpServers"]["opengsc"] == newer
+        finally:
+            for leftover in tmp_path.iterdir():
+                leftover.chmod(stat.S_IREAD | stat.S_IWRITE)
+
+    @pytest.mark.skipif(os.name != "posix", reason="mode bits are what POSIX tracks")
+    def test_a_failed_replace_leaves_a_protected_config_read_only(self, tmp_path, monkeypatch):
+        # The owner write bit is only added to the old file on Windows, where the replace
+        # needs it; a failed write must not widen an app's permissions on POSIX.
+        path = tmp_path / "config.json"
+        path.write_text(json.dumps({"mcpServers": {}}))
+        path.chmod(0o444)
+        monkeypatch.setattr(connect.os, "replace", mock.Mock(side_effect=OSError("boom")))
+        try:
+            with pytest.raises(OSError):
+                connect.add_server(path, "mcpServers", ENTRY, never_asked)
+            assert stat.S_IMODE(path.stat().st_mode) == 0o444
+        finally:
+            for leftover in tmp_path.iterdir():
+                leftover.chmod(stat.S_IREAD | stat.S_IWRITE)
+
     def test_a_symlinked_config_updates_the_file_it_points_to(self, tmp_path):
         real = tmp_path / "dotfiles" / "config.json"
         real.parent.mkdir()
@@ -234,6 +281,27 @@ def json_app(folder, name, *, installed=False, **kwargs):
 
 
 class TestMenu:
+    def test_a_cancel_after_a_connected_app_names_what_was_already_written(
+        self, tmp_path, launch, monkeypatch, capsys
+    ):
+        first, first_path = json_app(tmp_path, "First", installed=True)
+        second, second_path = json_app(tmp_path, "Second", installed=True)
+        old_entry = {"mcpServers": {"opengsc": {"command": "old"}}}
+        second_path.write_text(json.dumps(old_entry))
+        monkeypatch.setattr(connect, "APPS", (first, second))
+        monkeypatch.setattr("builtins.input", feed("", "q"))  # Enter = both apps, then quit
+
+        assert connect.run() == 2
+
+        out, err = capsys.readouterr()
+        assert "connect cancelled" in err
+        assert json.loads(first_path.read_text())["mcpServers"]["opengsc"] == ENTRY
+        assert json.loads(second_path.read_text()) == old_entry  # never replaced
+        summary = out[out.index("Already written before the cancel") :]
+        assert "First" in summary
+        assert f"Settings file: {first_path}" in summary
+        assert "Second" not in summary
+
     def test_enter_connects_the_apps_found_on_this_computer(
         self, tmp_path, launch, monkeypatch, capsys
     ):

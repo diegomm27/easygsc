@@ -99,7 +99,16 @@ def _write_atomic(path: Path, text: str) -> None:
             out.flush()
             os.fsync(out.fileno())
         if path.is_file():
-            shutil.copymode(path, tmp_name)  # keep the app's own permissions
+            mode = stat.S_IMODE(os.stat(path).st_mode)
+            if not mode & stat.S_IWRITE:
+                # Some apps protect their config: leave it readable and rewritable by its
+                # owner, or the next connect cannot update it.
+                mode |= stat.S_IREAD | stat.S_IWRITE
+                if os.name == "nt":
+                    # Windows refuses to replace a read-only destination; POSIX does not,
+                    # so the old file is left alone until the replace succeeds.
+                    os.chmod(path, mode)
+            os.chmod(tmp_name, mode)  # keep the app's own permissions
         os.replace(tmp_name, path)
     except BaseException:
         try:
@@ -453,7 +462,8 @@ def _print_generic(command: str, args: list[str]) -> None:
     print("\n".join(f"  {line}" for line in BROWSER_ONLY.splitlines()))
 
 
-def _connect_one(app: App, command: str, args: list[str]) -> bool:
+def _connect_one(app: App, command: str, args: list[str]) -> tuple[bool, str, list[str]]:
+    """Connect one app; returns (ok, status, notes) so a cancel can report the writes."""
     print(f"\n{app.name}")
     try:
         connect_app = _connect_cli if app.cli else _connect_json
@@ -463,13 +473,25 @@ def _connect_one(app: App, command: str, args: list[str]) -> bool:
             print(f"  {note}")
         print(f"  Could not connect it automatically: {exc}")
         _print_manual(app, command, args, exc.path)
-        return False
+        return False, "", []
     print(f"  {STATUS[status]}")
     for note in notes:
         print(f"  {note}")
     if status in ("added", "updated"):
         print(f"  Next: {app.then}")
-    return True
+    return True, status, notes
+
+
+def _print_already_written(done: Sequence[tuple[App, str, list[str]]]) -> None:
+    """Say what a cancel left behind, so the user knows which files already changed."""
+    written = [item for item in done if item[1] in ("added", "updated")]
+    if not written:
+        return
+    print("\nAlready written before the cancel:")
+    for app, status, notes in written:
+        print(f"  {app.name}: {STATUS[status]}")
+        for note in notes:
+            print(f"    {note}")
 
 
 def _choose(apps: Sequence[App]) -> list[int]:
@@ -500,7 +522,8 @@ def _choose(apps: Sequence[App]) -> list[int]:
 def choose_and_connect(apps: Sequence[App] | None = None) -> int:
     """Menu + connect: 0 when every chosen app is set, 1 when one needs a manual step.
 
-    Raises Cancelled on q/quit/EOF so each caller can word the cancellation.
+    Raises Cancelled on q/quit/EOF, after naming the files already written, so each
+    caller can word the cancellation.
     """
     apps = APPS if apps is None else apps
     command, args = launch_command()
@@ -509,11 +532,21 @@ def choose_and_connect(apps: Sequence[App] | None = None) -> int:
         print("No apps connected. Run 'opengsc connect' any time to add one.")
         return 0
     failed = False
-    for pick in picks:
-        if pick > len(apps):
-            _print_generic(command, args)
-        elif not _connect_one(apps[pick - 1], command, args):
-            failed = True
+    done: list[tuple[App, str, list[str]]] = []
+    try:
+        for pick in picks:
+            if pick > len(apps):
+                _print_generic(command, args)
+                continue
+            app = apps[pick - 1]
+            ok, status, notes = _connect_one(app, command, args)
+            if status:
+                done.append((app, status, notes))
+            if not ok:
+                failed = True
+    except Cancelled:
+        _print_already_written(done)  # a cancel must not hide the files already changed
+        raise
     print(f"\n{TRY_IT}")
     if failed:
         print("Some apps still need the manual step shown above.")
