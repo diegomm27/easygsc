@@ -46,7 +46,8 @@ slicing left to the user; runner `uv run pytest -q`.
   connect`, setup wiring, help and README — inline (depends on T1) — commits fec1983
   (menu + registry) and the commit that adds this line (setup/CLI wiring + docs) — DONE
 - T3 [S6,S7] gates, independent verifier (Risk item 1), RDD review — gates DONE;
-  native review of T1 waits for the user's consent; verifier pending
+  verifier DONE (B1 + A1 fixed in fd170d4, recheck FIXED); native review waits for
+  the user's consent on the corrected candidate
 
 ## Log
 
@@ -86,3 +87,27 @@ slicing left to the user; runner `uv run pytest -q`.
 - L6 (RDD): `review assess --base-ref bbbc2a4 --committed-only` on dcfb333 = high
   (executable change + escalated item 1); review START waits for the user's consent.
   Commits carry no Co-Authored-By (S6 overrides the harness attribution reminder).
+- L7 (independent verifier on bbbc2a4..46bccba): S1, S2, S3, S5, S6, S7, S8 and the
+  help invariants PASS; S4 PARTIAL. Blocker B1: a config that is not UTF-8 (UTF-16
+  from PowerShell 5.1, cp1252 from old Notepad) raised an uncaught UnicodeDecodeError,
+  so no manual steps were printed and the following apps never ran. A1 was raised to a
+  blocker because it breaks S4: the `config.toml` regex missed inline, dotted and quoted
+  TOML spellings, and `codex mcp add` then overwrote the entry, env included, without
+  asking. Advisories: A2 symlinked configs, A3 unclear message after Claude Code
+  remove + failed add, A4 manual step named the wrong copy, A5 temp file left behind
+  for a read-only config on Windows, A6 backup name reused within one second, A7
+  re-runs asked again or asked to quit for nothing, A8 out-of-domain inputs.
+- L8 (correction batch, fd170d4): one batch fixes B1, A1, A2, A3, A4, A5 and A7.
+  `codex mcp get opengsc` was probed against a scratch CODEX_HOME: exit 0 for the
+  inline form, 1 when there is no entry. RED: 10 new tests failed; GREEN: 169 passed,
+  2 skipped; ruff clean. Deferred as advisories: A6, and A8 (git subdirectory, UNC
+  paths, env auth not copied into app entries, README manual block showing
+  `uvx opengsc@0.2.0` until the release). The consent prompt shown for target
+  sha256:3004e20e… is superseded, because the candidate changed.
+- L9 (recheck limited to B1 and A1, fd170d4): both FIXED. B1: UTF-16 and cp1252
+  `~/.cursor/mcp.json` print "is not UTF-8 text, so opengsc left it untouched." plus
+  manual steps, hash unchanged, VS Code still connected, exit 1, no traceback. A1: a
+  fake codex answering `mcp get` from tomllib asked before overwrite for the table,
+  double-quoted, single-quoted, inline, dotted and `.env` sub-table spellings, with no
+  `mcp add` after "n"; the real codex-cli 0.163.0 (scratch CODEX_HOME) exits 0 for
+  those forms and 1 when there is no entry. Verifier scratch removed by the parent.
