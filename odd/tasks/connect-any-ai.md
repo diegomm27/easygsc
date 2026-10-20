@@ -46,8 +46,8 @@ slicing left to the user; runner `uv run pytest -q`.
   connect`, setup wiring, help and README — inline (depends on T1) — commits fec1983
   (menu + registry) and the commit that adds this line (setup/CLI wiring + docs) — DONE
 - T3 [S6,S7] gates, independent verifier (Risk item 1), RDD review — gates DONE;
-  verifier DONE (B1 + A1 fixed in fd170d4, recheck FIXED); native review waits for
-  the user's consent on the corrected candidate
+  verifier DONE (B1 + A1 fixed in fd170d4, recheck FIXED); native review APPROVED and
+  acknowledged (authority burned) for bbbc2a4..d4a351e — DONE
 
 ## Log
 
@@ -111,3 +111,22 @@ slicing left to the user; runner `uv run pytest -q`.
   double-quoted, single-quoted, inline, dotted and `.env` sub-table spellings, with no
   `mcp add` after "n"; the real codex-cli 0.163.0 (scratch CODEX_HOME) exits 0 for
   those forms and 1 when there is no entry. Verifier scratch removed by the parent.
+- L10 (native review, lineage review-9a20d0aae32ff417, target sha256:20cb4748…, whole
+  branch vs main, 19 files / 2525 lines, user answered "1" = granted): 4 lenses, budget
+  200. Three captures first failed in the reviewer transport ("Claude's response
+  exceeded the 32000 output token maximum"); bound STATUS re-offered the same slots and
+  they were relaunched with CLAUDE_CODE_MAX_OUTPUT_TOKENS=64000 in the child env only.
+  Result: APPROVED, `review.acknowledge-approved` -> `authority: burned`. 14 non-blocking
+  findings, left as later work: R1-001/R4-002 backup name has 1-second precision (each
+  config copy lives in its own folder, so only same-file re-runs collide), R1-002 CLI
+  error lines not passed through `_redact`, R4-001 no feedback while an app CLI runs (up
+  to 120 s), R4-003 Devin path on macOS unverified, R4-004 `_known_secrets` and a
+  non-dict client value, R2-001/R3-004 setup imports `cli._doctor`, R2-002 a backup
+  failure reads as "Cannot write", R2-003 `_connect_cli` branching, R2-004 conftest
+  `raising=False` can hide a rename, R3-001 `load_client` and non-UTF-8 client files,
+  R3-002 untested doctor-failure branch in `_authenticate`, R3-003 the help assertion
+  depends on subcommand order.
+- L11 (outside this feature): commits 66ee2e3 and 0a5a740 appeared on the branch
+  while this session was paused (author diegomm27; not made by this session). They come
+  after the reviewed candidate, so they are not covered by review-9a20d0aae32ff417.
+  Gates at 0a5a740: 182 passed, 3 skipped; ruff clean.
