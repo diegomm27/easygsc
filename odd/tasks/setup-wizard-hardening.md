@@ -30,6 +30,11 @@ this is a new candidate made of new commits on `feat/setup-wizard`.
   actionable line on stderr with the secrets redacted (part of the R4-2…R4-6
   error-branch follow-up). The Downloads search also covers a OneDrive-redirected
   `Downloads` folder, and the path prompt names every folder it searched.
+- S10 (wizard output, L10): every Google Cloud step prints a numbered list whose
+  first item is the URL and the rest are the actions, in this shape:
+  `1. Open this URL: <url>` then `2. ...`, `3. ...`. One action per item, each item
+  self-contained (no sentence split across two numbers). The same shape applies to
+  the client step that is reprinted when a `web` client is rejected.
 - S9 (review follow-up, L8): fix the findings of the blocked review payload
   `review-resilience-1-eee509194f48.json` that hold against the code: (a)
   `connect._write_atomic` must leave the rewritten app config writable by its
@@ -61,6 +66,9 @@ this is a new candidate made of new commits on `feat/setup-wizard`.
 - T9 [S8] the doctor check inside setup cannot traceback either: `_doctor_ok()`
   reports a crashing check (a revoked token makes google-auth raise
   `RefreshError`) and the wizard reports it instead of crashing — same commit — DONE
+- T11 [S10] numbered steps in `setup.py` (`STEPS`/`CLIENT_STEP` become
+  `(url, title, actions)`, `_step` renders the list) with tests for the layout —
+  see L10
 - T10 [S9] fix the review findings that hold: `_write_atomic` keeps the owner
   write bit, a cancel after partial writes names the files already changed,
   `_ask_replace` checked with evidence, and the T9 wording corrected — see L8 —
@@ -209,3 +217,12 @@ this is a new candidate made of new commits on `feat/setup-wizard`.
   `auth check failed` and returns 1. User decision L9.
 - L9 (user decision): "Corregir el candidato y review nuevo" — fix those items,
   commit, push, and start a new review lineage for the new candidate.
+- L10 (user request): «Always give the user step by step, starting with
+  "1. Open this URL:" as that's the first step.» — reported after a manual run
+  of the wizard, where each step ended with the URL after the long explanation.
+- L11 (RED then GREEN): the three tests that pin the step layout failed first
+  (`not enough values to unpack (expected 3, got 2)` and the missing numbered
+  list). GREEN: `183 passed, 3 skipped`; ruff check and format clean. Runtime
+  check with a temporary HOME: each step now reads `1. Open this URL: <url>`
+  followed by numbered, self-contained actions, and the URL line says
+  `(it just opened in your browser)` when the browser was opened.

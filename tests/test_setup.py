@@ -199,7 +199,7 @@ class TestObtainClient:
         monkeypatch.setattr("builtins.input", feed(""))
         assert setup._obtain_client(no_browser=True) == desktop
         out = capsys.readouterr().out
-        assert setup.CLIENT_URL in out
+        assert f"  1. Open this URL: {setup.CLIENT_URL}" in out
         assert setup.PUBLISH_URL not in out
         assert "Desktop app" in out
 
@@ -338,7 +338,7 @@ class TestWalkthrough:
 
         assert setup.run(no_browser=True) == 0
         out = capsys.readouterr().out
-        for url, _ in setup.STEPS:
+        for url, _, _ in setup.STEPS:
             assert url in out
         assert calls == [True]
         opener.assert_not_called()
@@ -347,6 +347,24 @@ class TestWalkthrough:
         assert "Connect opengsc to your AI apps" in out
         assert f"Command:  {command}" in out
         assert all(f"      {arg}\n" in out for arg in args)
+
+    def test_every_step_numbers_the_url_as_step_one(
+        self, config_dir, downloads, monkeypatch, capsys
+    ):
+        write_client(downloads / "client_secret_1.json")
+        doctor_ok(monkeypatch)
+        monkeypatch.setattr(setup.auth, "run_oauth_flow", fake_auth(config_dir))
+        monkeypatch.setattr(setup.webbrowser, "open", mock.Mock(return_value=True))
+        monkeypatch.setattr("builtins.input", feed(*WALKTHROUGH))
+
+        assert setup.run(no_browser=True) == 0
+        out = capsys.readouterr().out
+        for url, title, actions in setup.STEPS:
+            lines = out[out.index(title) :].splitlines()
+            assert lines[1].startswith(f"  1. Open this URL: {url}")
+            assert lines[2 : 2 + len(actions)] == [
+                f"  {number}. {action}" for number, action in enumerate(actions, start=2)
+            ]
 
     def test_default_mode_opens_the_browser_for_every_step(
         self, config_dir, downloads, monkeypatch
@@ -380,7 +398,7 @@ class TestWalkthrough:
 
         assert setup.run(no_browser=True) == 0
         out = capsys.readouterr().out
-        branding = out[out.index("Fill in Branding") : out.index(setup.BRANDING_URL)]
+        branding = out[out.index("Fill in Branding") : out.index("Publish the app")]
         # The consent screen belongs to the user's own app: it points at their site,
         # whose domain they already verified in Search Console.
         assert "your website" in branding

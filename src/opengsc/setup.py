@@ -13,6 +13,7 @@ import shutil
 import sys
 import tempfile
 import webbrowser
+from collections.abc import Sequence
 from pathlib import Path
 
 from . import auth, connect
@@ -35,57 +36,70 @@ PRIVACY_URL = "https://github.com/diegomm27/opengsc#security-and-transparency"
 
 CLIENT_STEP = (
     CLIENT_URL,
-    "Create the OAuth client: click 'Create client' and fill in:\n"
-    "  - Application type: Desktop app (not Web application)\n"
-    "  - Name: opengsc\n"
-    "  - Click 'Create', then 'Download JSON' right away: Google won't show the\n"
-    "    secret again. Leave the file in Downloads; setup picks it up from there.",
+    "Create the OAuth client",
+    (
+        "Click 'Create client'.",
+        "Application type: Desktop app (not Web application).",
+        "Name: opengsc.",
+        "Click 'Create', then 'Download JSON' right away: Google won't show the secret again.",
+        "Leave the file in Downloads; setup picks it up from there.",
+    ),
 )
 
 STEPS = (
     (
         PROJECT_URL,
-        "Create a Google Cloud project:\n"
-        "  - Project name: opengsc (any name works)\n"
-        "  - Click 'Create', then select it in the project picker at the top.",
+        "Create a Google Cloud project",
+        (
+            "Project name: opengsc (any name works).",
+            "Click 'Create', then select it in the project picker at the top.",
+        ),
     ),
     (
         API_URL,
-        "Enable the Search Console API:\n"
-        "  - Check that the project picker shows your new project.\n"
-        "  - Click 'Enable'.",
+        "Enable the Search Console API",
+        (
+            "Check that the project picker shows your new project.",
+            "Click 'Enable'.",
+        ),
     ),
     (
         CONSENT_URL,
-        "Set up the consent screen: click 'Get started' and fill in:\n"
-        "  - App name: opengsc\n"
-        "  - User support email: your email\n"
-        "  - Audience: External\n"
-        "  - Contact information: your email\n"
-        "  - Accept the policy, then click 'Create'.",
+        "Set up the consent screen",
+        (
+            "Click 'Get started'.",
+            "App name: opengsc.",
+            "User support email: your email.",
+            "Audience: External.",
+            "Contact information: your email.",
+            "Accept the policy, then click 'Create'.",
+        ),
     ),
     CLIENT_STEP,
     (
         BRANDING_URL,
-        "Fill in Branding (Google won't let you publish without these links):\n"
-        "  - App logo: leave it empty; uploading one forces Google verification.\n"
-        "  - Application home page: your website, e.g. https://example.com\n"
-        "  - Privacy policy link: your website's privacy page. If it has none, use\n"
-        f"    {PRIVACY_URL}\n"
-        "  - Terms of service link: leave it empty.\n"
-        "  - Authorized domains: your domain, e.g. example.com (the one verified in\n"
-        "    Search Console). Add github.com too if you used the link above.\n"
-        "  - Click 'Save'.",
+        "Fill in Branding (Google won't let you publish without these links)",
+        (
+            "App logo: leave it empty; uploading one forces Google verification.",
+            "Application home page: your website, e.g. https://example.com",
+            f"Privacy policy link: your site's privacy page, or {PRIVACY_URL}",
+            "Terms of service link: leave it empty.",
+            "Authorized domains: your domain, e.g. example.com (the one you verified).",
+            "Add github.com too if you used the privacy link above.",
+            "Click 'Save'.",
+        ),
     ),
     (
         PUBLISH_URL,
-        "Publish the app: click 'Publish app' and confirm.\n"
-        "  - The status should read 'In production'. In 'Testing', Google expires\n"
-        "    your login every 7 days.\n"
-        "  - Publishing does not expose your data: each login only sees its own\n"
-        "    Search Console.\n"
-        "  - At login, Google warns the app isn't verified. That is expected for a\n"
-        "    personal app: click 'Advanced', then 'Go to opengsc'.",
+        "Publish the app",
+        (
+            "Click 'Publish app' and confirm.",
+            "Check that the status reads 'In production'.",
+            "In 'Testing' Google expires your login every 7 days, so publish it.",
+            "Publishing does not expose your data: each login sees only its own site.",
+            "At login Google warns the app isn't verified; that is expected for a",
+            "personal app. Click 'Advanced', then 'Go to opengsc'.",
+        ),
     ),
 )
 
@@ -104,10 +118,13 @@ class WebClientError(SetupError):
     pass
 
 
-def _step(url: str, explanation: str, no_browser: bool) -> None:
-    print(f"\n{explanation}")
-    if no_browser or not webbrowser.open(url):
-        print(f"Open this URL: {url}")
+def _step(url: str, title: str, actions: Sequence[str], no_browser: bool) -> None:
+    """Print one Cloud step as a numbered list; opening the URL is always step 1."""
+    print(f"\n{title}")
+    opened = not no_browser and webbrowser.open(url)
+    print(f"  1. Open this URL: {url}" + ("  (it just opened in your browser)" if opened else ""))
+    for number, action in enumerate(actions, start=2):
+        print(f"  {number}. {action}")
     ask("Press Enter when done... ")
 
 
@@ -315,8 +332,8 @@ def _run(no_browser: bool) -> int:
         if confirm("Skip the Google Cloud walkthrough and run auth now? [Y/n] ", default=True):
             return _authenticate(no_browser)
 
-    for url, explanation in STEPS:
-        _step(url, explanation, no_browser)
+    for url, title, actions in STEPS:
+        _step(url, title, actions, no_browser)
     source = _obtain_client(no_browser)
     install_client(source)
     if confirm(f"Delete the downloaded copy at {source}? [y/N] "):
