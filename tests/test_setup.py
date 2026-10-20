@@ -103,6 +103,32 @@ class TestFindDownloaded:
         os.utime(b, (5_000, 5_000))
         assert setup.find_downloaded(downloads) is None
 
+    def test_searches_an_onedrive_downloads_folder(self, tmp_path, monkeypatch):
+        # OneDrive often redirects Downloads, so the plain ~/Downloads lookup misses it.
+        plain = tmp_path / "Downloads"
+        plain.mkdir()
+        redirected = tmp_path / "OneDrive" / "Downloads"
+        redirected.mkdir(parents=True)
+        wanted = write_client(redirected / "client_secret_1.json")
+        monkeypatch.setattr(setup, "_download_dirs", lambda: [plain, redirected])
+        assert setup.find_downloaded() == wanted
+
+    def test_picks_the_newest_across_folders(self, tmp_path, monkeypatch):
+        plain = tmp_path / "Downloads"
+        plain.mkdir()
+        redirected = tmp_path / "OneDrive" / "Downloads"
+        redirected.mkdir(parents=True)
+        old = write_client(plain / "client_secret_old.json")
+        new = write_client(redirected / "client_secret_new.json")
+        os.utime(old, (1_000, 1_000))
+        os.utime(new, (2_000, 2_000))
+        monkeypatch.setattr(setup, "_download_dirs", lambda: [plain, redirected])
+        assert setup.find_downloaded() == new
+
+    def test_an_empty_candidate_list_finds_nothing(self, monkeypatch):
+        monkeypatch.setattr(setup, "_download_dirs", lambda: [])
+        assert setup.find_downloaded() is None
+
 
 class TestLoadClient:
     def test_accepts_an_installed_client(self, tmp_path):
@@ -134,6 +160,32 @@ class TestLoadClient:
 
 
 class TestObtainClient:
+    def test_says_which_downloaded_file_it_is_using(self, downloads, monkeypatch, capsys):
+        found = write_client(downloads / "client_secret_found.json")
+        monkeypatch.setattr("builtins.input", mock.Mock(side_effect=AssertionError("prompted")))
+        assert setup._obtain_client(no_browser=True) == found
+        out = capsys.readouterr().out
+        assert f"Using the client file you downloaded: {found}" in out
+        assert SECRET not in out
+
+    def test_the_path_prompt_names_the_folders_it_searched(self, tmp_path, monkeypatch, capsys):
+        plain = tmp_path / "Downloads"
+        plain.mkdir()
+        redirected = tmp_path / "OneDrive" / "Downloads"
+        redirected.mkdir(parents=True)
+        good = write_client(tmp_path / "elsewhere" / "client_secret.json")
+        monkeypatch.setattr(setup, "_download_dirs", lambda: [plain, redirected])
+        prompts = []
+
+        def fake_input(prompt=""):
+            prompts.append(prompt)
+            return str(good)
+
+        monkeypatch.setattr("builtins.input", fake_input)
+        assert setup._obtain_client(no_browser=True) == good
+        assert any(str(plain) in prompt for prompt in prompts)
+        assert any(str(redirected) in prompt for prompt in prompts)
+
     def test_strips_quotes_from_a_pasted_path(self, downloads, tmp_path, monkeypatch, capsys):
         good = write_client(tmp_path / "downloaded" / "client_secret.json")
         monkeypatch.setattr("builtins.input", feed(f'  "{good}"  '))
@@ -206,6 +258,19 @@ class TestInstallClient:
         monkeypatch.setattr("builtins.input", mock.Mock(side_effect=AssertionError("prompted")))
         setup.install_client(source)
         assert json.loads(dest.read_text())["installed"]["client_secret"] == SECRET
+
+    def test_says_where_the_client_was_installed(self, config_dir, tmp_path, capsys):
+        source = write_client(tmp_path / "client_secret.json")
+        dest = setup.install_client(source)
+        out = capsys.readouterr().out
+        assert f"Installed the client as {dest}" in out
+        assert SECRET not in out
+
+    def test_says_it_keeps_an_identical_client(self, config_dir, tmp_path, capsys):
+        dest = write_client(config_dir / "client_secret.json", secret=SECRET)
+        source = write_client(tmp_path / "client_secret.json", secret=SECRET)
+        setup.install_client(source)
+        assert f"{dest} already holds this client" in capsys.readouterr().out
 
 
 class TestShortCircuit:
@@ -458,3 +523,77 @@ class TestInterrupt:
         err = capsys.readouterr().err
         assert "opengsc setup" in err
         assert "again" in err
+
+
+class TestCleanFailure:
+    """A person following the wizard must never get a Python traceback."""
+
+    def test_a_malformed_client_is_reported_with_a_fix(
+        self, config_dir, downloads, monkeypatch, capsys
+    ):
+        write_client(config_dir / "client_secret.json")
+        monkeypatch.setattr(
+            setup.auth,
+            "run_oauth_flow",
+            mock.Mock(side_effect=ValueError("Client secrets is not in the correct format.")),
+        )
+        monkeypatch.setattr("builtins.input", feed(""))
+
+        assert setup.run(no_browser=True) == 1
+        captured = capsys.readouterr()
+        assert "Traceback" not in captured.err
+        assert "auth failed" in captured.err
+        assert "download" in captured.err.lower()
+        assert "Connect opengsc to your AI apps" not in captured.out
+
+    def test_a_network_failure_during_login_is_reported_cleanly(
+        self, config_dir, downloads, monkeypatch, capsys
+    ):
+        write_client(config_dir / "client_secret.json")
+        monkeypatch.setattr(
+            setup.auth,
+            "run_oauth_flow",
+            mock.Mock(side_effect=OSError("connection refused")),
+        )
+        monkeypatch.setattr("builtins.input", feed(""))
+
+        assert setup.run(no_browser=True) == 1
+        captured = capsys.readouterr()
+        assert "Traceback" not in captured.err
+        assert "auth failed: connection refused" in captured.err
+        assert "opengsc setup" in captured.err
+
+    def test_the_error_keeps_secrets_out_of_the_report(
+        self, config_dir, downloads, monkeypatch, capsys
+    ):
+        write_client(config_dir / "client_secret.json")
+        write_token(config_dir)
+        monkeypatch.setattr(setup, "_doctor", lambda: 1)  # no network in tests
+        monkeypatch.setattr(
+            setup.auth,
+            "run_oauth_flow",
+            mock.Mock(side_effect=ValueError(f"bad client {SECRET} token {REFRESH}")),
+        )
+        monkeypatch.setattr("builtins.input", feed(""))
+
+        assert setup.run(no_browser=True) == 1
+        err = capsys.readouterr().err
+        assert SECRET not in err
+        assert REFRESH not in err
+        assert "***" in err
+
+    def test_a_crashing_doctor_check_does_not_traceback(
+        self, config_dir, downloads, monkeypatch, capsys
+    ):
+        # A revoked token makes google-auth raise RefreshError while doctor lists sites.
+        write_client(config_dir / "client_secret.json")
+        write_token(config_dir)
+        monkeypatch.setattr(setup, "_doctor", mock.Mock(side_effect=RuntimeError("invalid_grant")))
+        monkeypatch.setattr(setup.auth, "run_oauth_flow", fake_auth(config_dir))
+        monkeypatch.setattr("builtins.input", feed("", ""))
+
+        assert setup.run(no_browser=True) == 1
+        captured = capsys.readouterr()
+        assert "Traceback" not in captured.err
+        assert "check failed: RuntimeError: invalid_grant" in captured.err
+        assert "auth check failed" in captured.err

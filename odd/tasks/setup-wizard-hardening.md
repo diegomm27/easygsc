@@ -23,6 +23,13 @@ this is a new candidate made of new commits on `feat/setup-wizard`.
 - S6: Test first where applicable; gates: `uv run pytest -q`,
   `uv run ruff check src tests`, `uv run ruff format --check src tests`.
 - S7: Do not reopen `review-9afcdcc8dbf2e58d`; the new candidate gets a fresh review.
+- S8 (usability follow-up, user request L6): the wizard must say which downloaded
+  client file it is using and where it installed it, so a person can see whether it
+  picked the file they just downloaded. It must never end in a Python traceback: a
+  malformed or edited client file, or a network failure during login, prints one
+  actionable line on stderr with the secrets redacted (part of the R4-2…R4-6
+  error-branch follow-up). The Downloads search also covers a OneDrive-redirected
+  `Downloads` folder, and the path prompt names every folder it searched.
 
 ## Tasks
 
@@ -36,6 +43,15 @@ this is a new candidate made of new commits on `feat/setup-wizard`.
 - T4 [S4] record pending follow-ups and evidence — this doc commit — DONE
 - T5 [S6,S7] full gates, then fresh review for the new target — gates done; the
   review is the next lifecycle step and no code commit — DONE
+- T6 [S8] report the discovered client file and the install destination, cover a
+  OneDrive `Downloads` folder — commit with T7 — DONE
+- T7 [S8] no traceback from the login step: `ValueError`/`OSError` from the OAuth
+  flow print `auth failed: …` plus the fix, redacted — commit with T6 — DONE
+- T8 [S8,GATES] gates and README wording for the discovery and the new error row —
+  same commit — DONE
+- T9 [S8] the doctor check inside setup cannot traceback either: `_doctor_ok()`
+  reports a crashing check (a revoked token makes google-auth raise
+  `RefreshError`) and the wizard offers to log in again — same commit — DONE
 
 ## Pending follow-ups (out of scope)
 
@@ -44,6 +60,10 @@ this is a new candidate made of new commits on `feat/setup-wizard`.
   "Status: 0.2.0 is not on PyPI yet" block from the README Setup section and the
   matching Troubleshooting row. Until that release the README documents a state
   the index does not serve.
+- `origin/feat/setup-wizard` is 10+ commits behind this branch: the README's
+  "run the current code straight from GitHub" fallback installs a build without
+  `connect`, without the Branding step and without this hardening. Pushing the
+  branch is the user's call and is the cheapest way to make that fallback true.
 - R2-001 readability `setup.py:109-121`
 - R2-002 readability `setup.py:118`
 - R2-003 readability `tests/test_setup.py:16`
@@ -113,3 +133,22 @@ this is a new candidate made of new commits on `feat/setup-wizard`.
 - L5 (new candidate): commits e6e53bb, a1b05b9 and fa75ca9 are additive on top of
   df4af0b. The reviewed tree `c80a46b` is unchanged in history, so
   `review-9afcdcc8dbf2e58d` remains a valid burned receipt for its own target.
+- L6 (user request, usability follow-up): "Adelante. Arregla todo." — after a
+  read-only audit that found: PyPI still serves 0.1.0 so `uvx opengsc setup`
+  fails; `origin/feat/setup-wizard` is 10 commits behind, so the README fallback
+  installs a build without `connect`/Branding/hardening; the wizard installs the
+  client silently; a malformed client raises `ValueError` from
+  google-auth-oauthlib as a raw traceback; and `~/Downloads` misses a
+  OneDrive-redirected folder. Scope taken for code (S8): the three wizard gaps.
+  Push, PR and release stay with the user (connect-any-ai S6).
+- L7 (RED then GREEN): the 10 new tests failed first (no `_download_dirs`, no
+  install/announce message, traceback instead of `auth failed`, and
+  `test_a_crashing_doctor_check_does_not_traceback`). GREEN:
+  `180 passed, 2 skipped`; `ruff check` and `ruff format --check` clean.
+  Runtime check with a temporary HOME: `Using the client file you downloaded:
+  …\Downloads\client_secret_123.json`, `Installed the client as
+  …\.config\opengsc\client_secret.json.`, then a malformed client produced
+  `auth failed: Client secrets is not in the correct format.` plus the fix line
+  and no traceback. `_download_dirs()` on this machine returns the real
+  `~/Downloads` path. `auth --help`, `setup --help`, the top-level help and
+  `doctor` are unchanged; only `setup` output changed.

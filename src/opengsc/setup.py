@@ -94,6 +94,12 @@ class SetupError(RuntimeError):
     """A setup problem the user can fix; the message is user-facing."""
 
 
+AUTH_FIX = (
+    "Rerun 'opengsc setup' once that is fixed. If the client file looks incomplete or "
+    "was edited, download it again from the Clients page."
+)
+
+
 class WebClientError(SetupError):
     pass
 
@@ -135,26 +141,51 @@ def _configured_where() -> str | None:
     return str(auth.CLIENT_SECRET_PATH)
 
 
+def _download_dirs() -> list[Path]:
+    """Downloads folders to search: OneDrive often redirects the real one."""
+    home = Path.home()
+    candidates = [DOWNLOADS_DIR, home / "OneDrive" / "Downloads"]
+    try:
+        candidates += sorted(home.glob("OneDrive - */Downloads"))
+    except OSError:
+        pass
+    return [folder for folder in candidates if folder.is_dir()]
+
+
+def _searched_dirs() -> str:
+    folders = _download_dirs()
+    return " or ".join(str(folder) for folder in folders) if folders else str(DOWNLOADS_DIR)
+
+
 def find_downloaded(downloads: Path | None = None) -> Path | None:
     """Newest client_secret*.json in Downloads; the pattern also covers .json.json."""
-    downloads = downloads if downloads is not None else DOWNLOADS_DIR
-    try:
-        files = [p for p in downloads.glob("client_secret*.json") if p.is_file()]
-        candidates = sorted(((p.stat().st_mtime, p) for p in files), reverse=True)
-    except OSError:
-        return None
+    folders = [downloads] if downloads is not None else _download_dirs()
+    candidates = []
+    for folder in folders:
+        try:
+            candidates += [(p.stat().st_mtime, p) for p in folder.glob("client_secret*.json")]
+        except OSError:
+            continue
+    candidates = [pair for pair in candidates if pair[1].is_file()]
     if not candidates:
         return None
+    candidates.sort(reverse=True)
     if len(candidates) > 1 and candidates[0][0] == candidates[1][0]:
         return None  # a tie is ambiguous: ask instead of guessing
     return candidates[0][1]
 
 
+def _announce(path: Path | None) -> Path | None:
+    if path is not None:
+        print(f"\nUsing the client file you downloaded: {path}")
+    return path
+
+
 def _obtain_client(no_browser: bool) -> Path:
-    source = find_downloaded()
+    source = _announce(find_downloaded())
     while True:
         if source is None:
-            raw = ask(f"Path to the downloaded JSON (look in {DOWNLOADS_DIR}): ")
+            raw = ask(f"Path to the downloaded JSON (I looked in {_searched_dirs()}): ")
             source = Path(raw.strip().strip("\"'").strip()).expanduser()  # Copy-as-path quotes
         try:
             load_client(source)
@@ -163,7 +194,7 @@ def _obtain_client(no_browser: bool) -> Path:
             print(_redact(str(exc)))
             _step(*CLIENT_STEP, no_browser)
             found = find_downloaded()
-            source = found if found != source else None
+            source = _announce(found) if found != source else None
         except SetupError as exc:
             print(_redact(str(exc)))
             source = None
@@ -176,7 +207,10 @@ def install_client(source: Path, dest: Path | None = None) -> Path:
         same = dest.read_bytes() == source.read_bytes()
     except OSError:
         same = False
-    if dest.is_file() and not same:
+    if dest.is_file() and same:
+        print(f"{dest} already holds this client.")
+        return dest
+    if dest.is_file():
         if not confirm(f"{dest} already exists. Overwrite it? [y/N] "):
             print(f"Keeping the existing file at {dest}.")
             return dest
@@ -198,6 +232,7 @@ def install_client(source: Path, dest: Path | None = None) -> Path:
         except OSError:
             pass
         raise
+    print(f"Installed the client as {dest}.")
     return dest
 
 
@@ -242,18 +277,29 @@ def _redact(text: str) -> str:
     return text
 
 
+def _doctor_ok() -> bool:
+    """Run the doctor check; a failing check is reported, never raised.
+
+    ``google-auth`` raises ``RefreshError`` from inside ``doctor`` when the stored
+    token was revoked, which would otherwise end the wizard in a traceback.
+    """
+    try:
+        return _doctor() == 0
+    except Exception as exc:  # noqa: BLE001 - the wizard reports instead of crashing
+        print(f"check failed: {_redact(f'{type(exc).__name__}: {exc}')}", file=sys.stderr)
+        return False
+
+
 def _authenticate(no_browser: bool) -> int:
     print("\nNow logging in to Google...")
     try:
         auth.run_oauth_flow(no_browser=no_browser, print_refresh_token=False)
-    except auth.AuthError as exc:
-        message = _redact(str(exc))
-        print(
-            f"auth failed: {message}\nRerun 'opengsc setup' once the client is fixed.",
-            file=sys.stderr,
-        )
+    except (auth.AuthError, ValueError, OSError) as exc:
+        # A malformed or edited client file and a network problem both read as a
+        # fixable message; the wizard never ends in a Python traceback.
+        print(f"auth failed: {_redact(str(exc))}\n{AUTH_FIX}", file=sys.stderr)
         return 1
-    if _doctor() != 0:
+    if not _doctor_ok():
         print("auth check failed; see the report above.", file=sys.stderr)
         return 1
     print(f"Authenticated; token saved to {auth.TOKEN_PATH}.")
@@ -263,7 +309,7 @@ def _authenticate(no_browser: bool) -> int:
 def _run(no_browser: bool) -> int:
     if where := _configured_where():
         print(f"opengsc already has an OAuth client configured ({where}).")
-        if auth.TOKEN_PATH.is_file() and _doctor() == 0:
+        if auth.TOKEN_PATH.is_file() and _doctor_ok():
             print("Everything is ready: the client is installed and auth works.")
             return _connect_apps()
         if confirm("Skip the Google Cloud walkthrough and run auth now? [Y/n] ", default=True):

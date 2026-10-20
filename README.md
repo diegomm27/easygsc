@@ -49,7 +49,7 @@ It walks you through the Google Cloud steps one at a time, opening the right pag
 5. Fill in Branding with your website's links (no logo).
 6. Publish the app.
 
-Then it finds the JSON in your Downloads folder (or asks for the path), checks it is a Desktop client, copies it to `~/.config/opengsc/client_secret.json` with `0600` permissions, runs the Google login, checks that your properties are readable, and moves on to Step 2.
+Then it finds the JSON in your Downloads folder (or the OneDrive one, or asks for the path), checks it is a Desktop client, copies it to `~/.config/opengsc/client_secret.json` with `0600` permissions, runs the Google login, checks that your properties are readable, and moves on to Step 2. It tells you which file it used and where it installed it.
 
 - It never overwrites a different client file without asking, and only deletes your download if you say yes.
 - No browser? Add `--no-browser` to print the URLs instead.
@@ -264,6 +264,7 @@ The output ends with a metadata block. `more_may_exist: true` means the page was
 | Problem | Fix |
 | --- | --- |
 | `No OAuth client configured` | Run `opengsc setup`, or check the path and name (Manual setup, step 2). |
+| `auth failed: Client secrets is not in the correct format` | The client file is incomplete or was edited. Download it again from the [Clients page](https://console.cloud.google.com/auth/clients) and run `opengsc setup`. |
 | `auth` fails right away with a valid-looking file | The client must be **Desktop app**. Open the JSON: it should start with `{"installed":`. If it starts with `{"web":`, create a new Desktop client. |
 | "Google hasn't verified this app" | Normal. Click **Advanced → Go to opengsc**. |
 | `401` / `invalid_grant` | Login expired or was revoked. Usually the app was left in *Testing*: publish it (Manual setup, step 1.6), then run `opengsc auth` again. |
