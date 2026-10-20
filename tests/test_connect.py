@@ -1,6 +1,7 @@
 """Tests for connecting opengsc to AI apps: files, PATH and app CLIs all faked."""
 
 import json
+import stat
 from unittest import mock
 
 import pytest
@@ -165,6 +166,49 @@ class TestAddServer:
         assert path.read_text() == original
         assert not [p for p in tmp_path.iterdir() if p.suffix == ".tmp"]
 
+    @pytest.mark.parametrize(
+        "raw",
+        [
+            json.dumps({"mcpServers": {}}).encode("utf-16"),  # PowerShell 5.1 '>' output
+            '{"mcpServers": {}, "user": "José"}'.encode("cp1252"),  # old Notepad "ANSI"
+        ],
+    )
+    def test_a_file_that_is_not_utf8_is_left_untouched(self, tmp_path, raw):
+        path = tmp_path / "config.json"
+        path.write_bytes(raw)
+        with pytest.raises(connect.ConnectError, match="left it untouched"):
+            connect.add_server(path, "mcpServers", ENTRY, never_asked)
+        assert path.read_bytes() == raw
+        assert leftovers(tmp_path, path.name) == []
+
+    def test_a_read_only_file_leaves_no_temp_file_when_the_write_fails(self, tmp_path, monkeypatch):
+        path = tmp_path / "config.json"
+        path.write_text(json.dumps({"mcpServers": {}}))
+        path.chmod(stat.S_IREAD)
+        monkeypatch.setattr(connect.os, "replace", mock.Mock(side_effect=PermissionError("ro")))
+        try:
+            with pytest.raises(connect.ConnectError, match="Cannot write"):
+                connect.add_server(path, "mcpServers", ENTRY, never_asked)
+            assert not [p for p in tmp_path.iterdir() if p.suffix == ".tmp"]
+        finally:
+            for leftover in tmp_path.iterdir():
+                leftover.chmod(stat.S_IREAD | stat.S_IWRITE)
+
+    def test_a_symlinked_config_updates_the_file_it_points_to(self, tmp_path):
+        real = tmp_path / "dotfiles" / "config.json"
+        real.parent.mkdir()
+        real.write_text(json.dumps({"mcpServers": {}}))
+        link = tmp_path / "config.json"
+        try:
+            link.symlink_to(real)
+        except (OSError, NotImplementedError):
+            pytest.skip("symlinks are not available here")
+
+        connect.add_server(link, "mcpServers", ENTRY, never_asked)
+
+        assert link.is_symlink()
+        assert json.loads(real.read_text()) == {"mcpServers": {"opengsc": ENTRY}}
+
 
 # Captured at import, before the autouse guard in conftest swaps APPS for ().
 REAL = {app.name: app for app in connect.APPS}
@@ -313,6 +357,36 @@ class TestJsonApps:
         assert "replaced the old opengsc entry" in out
         assert out.count("Backup of the previous file") == 2
 
+    def test_a_failing_copy_is_named_and_the_updated_one_is_reported(
+        self, tmp_path, launch, monkeypatch, capsys
+    ):
+        good, bad = tmp_path / "a" / "c.json", tmp_path / "b" / "c.json"
+        good.parent.mkdir()
+        bad.parent.mkdir()
+        bad.write_text('{ // mine\n  "mcpServers": {}\n}')
+        app = connect.App("Desk", "Reopen it.", configs=lambda: [good, bad])
+        monkeypatch.setattr("builtins.input", feed(""))
+
+        assert connect.choose_and_connect([app]) == 1
+
+        out = capsys.readouterr().out
+        assert f"Settings file: {good}" in out
+        assert f"Do it by hand: open {bad}" in out
+        assert f"Do it by hand: open {good}" not in out
+
+    def test_an_already_connected_app_is_not_asked_to_close(
+        self, tmp_path, launch, monkeypatch, capsys
+    ):
+        app, path = json_app(tmp_path, "Desk", installed=True, close_first=True)
+        path.write_text(json.dumps({"mcpServers": {"opengsc": app.entry(*COMMAND)}}))
+        monkeypatch.setattr("builtins.input", feed(""))  # the menu is the only prompt
+
+        assert connect.choose_and_connect([app]) == 0
+
+        out = capsys.readouterr().out
+        assert "Quit Desk" not in out
+        assert "Already connected" in out
+
     def test_entry_shapes(self):
         assert REAL["VS Code (GitHub Copilot)"].section == "servers"
         assert REAL["VS Code (GitHub Copilot)"].entry(*COMMAND) == {
@@ -419,22 +493,54 @@ class TestCliApps:
             assert "replaced the old opengsc entry" in capsys.readouterr().out
 
     @pytest.mark.parametrize("answer", ["n", "y"])
-    def test_codex_asks_before_overwriting_its_entry(self, home, launch, monkeypatch, answer):
+    def test_codex_asks_before_overwriting_its_entry(self, launch, monkeypatch, answer):
+        # Codex itself answers whether it has an entry, in any TOML spelling.
         on_path(monkeypatch, codex="/bin/codex")
-        (home / ".codex").mkdir()
-        (home / ".codex" / "config.toml").write_text('[mcp_servers.opengsc]\ncommand = "old"\n')
         run = mock.Mock(return_value=(0, ""))
         monkeypatch.setattr(connect, "_run", run)
-        monkeypatch.setattr("builtins.input", feed("", answer))
+        prompts = []
+        answers = iter(["", answer])
+
+        def reply(prompt=""):
+            prompts.append(prompt)
+            return next(answers)
+
+        monkeypatch.setattr("builtins.input", reply)
 
         assert connect.choose_and_connect([REAL["Codex (OpenAI)"]]) == 0
 
+        calls = [c.args[0] for c in run.call_args_list]
+        assert calls[0] == ["/bin/codex", "mcp", "get", "opengsc"]
+        assert "already has an opengsc entry" in prompts[1]
         if answer == "n":
-            run.assert_not_called()
+            assert calls == calls[:1]
         else:
-            run.assert_called_once_with(
+            assert calls[1:] == [
                 ["/bin/codex", "mcp", "add", "opengsc", "--", "/abs/uvx", "opengsc@0.2.0"]
-            )
+            ]
+
+    def test_codex_adds_without_asking_when_it_has_no_entry(self, launch, monkeypatch):
+        on_path(monkeypatch, codex="/bin/codex")
+        run = mock.Mock(side_effect=[(1, "Error: No MCP server named 'opengsc' found."), (0, "")])
+        monkeypatch.setattr(connect, "_run", run)
+        monkeypatch.setattr("builtins.input", feed(""))
+        assert connect.choose_and_connect([REAL["Codex (OpenAI)"]]) == 0
+        assert run.call_args_list[1].args[0][1:3] == ["mcp", "add"]
+
+    def test_claude_code_says_the_old_entry_is_gone_when_the_new_add_fails(
+        self, launch, monkeypatch, capsys
+    ):
+        on_path(monkeypatch, claude="/bin/claude")
+        monkeypatch.setattr(
+            connect,
+            "_run",
+            mock.Mock(side_effect=[(1, "MCP server opengsc already exists"), (0, ""), (1, "boom")]),
+        )
+        monkeypatch.setattr("builtins.input", feed("", "y"))
+        assert connect.choose_and_connect([REAL["Claude Code"]]) == 1
+        out = capsys.readouterr().out
+        assert "old entry was already removed" in out
+        assert "claude mcp add --scope user opengsc -- /abs/uvx opengsc@0.2.0" in out
 
     def test_a_missing_cli_prints_the_command_to_run(self, launch, monkeypatch, capsys):
         monkeypatch.setattr("builtins.input", feed("1"))

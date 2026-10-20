@@ -10,9 +10,9 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import shlex
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -36,7 +36,15 @@ BROWSER_ONLY = (
 
 
 class ConnectError(Exception):
-    """An app config opengsc could not edit; the message is user-facing."""
+    """An app config opengsc could not edit; the message is user-facing.
+
+    ``path`` names the file that failed; ``notes`` report files already updated.
+    """
+
+    def __init__(self, message: str, path: Path | None = None, notes: Sequence[str] = ()):
+        super().__init__(message)
+        self.path = path
+        self.notes = list(notes)
 
 
 def _direct_url() -> dict | None:
@@ -95,6 +103,7 @@ def _write_atomic(path: Path, text: str) -> None:
         os.replace(tmp_name, path)
     except BaseException:
         try:
+            os.chmod(tmp_name, stat.S_IREAD | stat.S_IWRITE)  # Windows won't delete read-only
             os.unlink(tmp_name)
         except OSError:
             pass
@@ -110,23 +119,31 @@ def add_server(
     ``kept`` when ``replace()`` declined overwriting a different opengsc entry. Raises
     ConnectError, leaving the file untouched, for anything but a plain JSON object.
     """
+    if path.is_symlink():
+        path = path.resolve()  # dotfile managers link configs: update the real file
     exists = path.is_file()
     try:
         raw = path.read_text(encoding="utf-8-sig") if exists else ""
     except OSError as exc:
-        raise ConnectError(f"Cannot read {path}: {exc}") from exc
+        raise ConnectError(f"Cannot read {path}: {exc}", path) from exc
+    except UnicodeDecodeError:
+        raise ConnectError(
+            f"{path} is not UTF-8 text, so opengsc left it untouched.", path
+        ) from None
     try:
         data = json.loads(raw) if raw.strip() else {}
     except json.JSONDecodeError:
         raise ConnectError(
-            f"{path} is not plain JSON (comments or a typo?), so opengsc left it untouched."
+            f"{path} is not plain JSON (comments or a typo?), so opengsc left it untouched.", path
         ) from None
     if not isinstance(data, dict):
-        raise ConnectError(f"{path} does not hold a JSON object, so opengsc left it untouched.")
+        raise ConnectError(
+            f"{path} does not hold a JSON object, so opengsc left it untouched.", path
+        )
     servers = data.setdefault(section, {})
     if not isinstance(servers, dict):
         raise ConnectError(
-            f"'{section}' in {path} is not a JSON object, so opengsc left it untouched."
+            f"'{section}' in {path} is not a JSON object, so opengsc left it untouched.", path
         )
 
     current = servers.get(SERVER_NAME)
@@ -139,8 +156,16 @@ def add_server(
         backup = _backup(path) if exists else None
         _write_atomic(path, json.dumps(data, indent=2, ensure_ascii=False) + "\n")
     except OSError as exc:
-        raise ConnectError(f"Cannot write {path}: {exc}") from exc
+        raise ConnectError(f"Cannot write {path}: {exc}", path) from exc
     return ("updated" if current is not None else "added"), backup
+
+
+def _has_entry(path: Path, section: str, entry: dict) -> bool:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
+        return data.get(section, {}).get(SERVER_NAME) == entry
+    except (OSError, ValueError, AttributeError):
+        return False
 
 
 @dataclass(frozen=True)
@@ -160,7 +185,7 @@ class App:
     cli: str | None = None
     add: Callable[[str, list[str]], list[str]] | None = None  # argv after the cli
     remove: tuple[str, ...] = ()  # argv after the cli; used when add refuses a duplicate
-    registered: Callable[[], bool] | None = None  # for CLIs that overwrite silently
+    exists: tuple[str, ...] = ()  # argv that exits 0 when opengsc is registered
     detect: tuple[str, ...] = ()  # executables that show the app is installed
     found_by_folder: bool = True  # an existing config folder means it is installed
 
@@ -226,20 +251,6 @@ def _devin() -> list[Path]:
     ]
 
 
-def _codex_config() -> Path:
-    return _env_dir("CODEX_HOME", Path.home() / ".codex") / "config.toml"
-
-
-def _codex_registered() -> bool:
-    try:
-        text = _codex_config().read_text(encoding="utf-8")
-    except OSError:
-        return False
-    return (
-        re.search(r'^\s*\[\s*mcp_servers\s*\.\s*"?opengsc"?\s*\]', text, re.MULTILINE) is not None
-    )
-
-
 APPS: tuple[App, ...] = (
     App(
         "Claude Desktop",
@@ -268,7 +279,8 @@ APPS: tuple[App, ...] = (
         "Start a new Codex session.",
         cli="codex",
         add=lambda command, args: ["mcp", "add", SERVER_NAME, "--", command, *args],
-        registered=_codex_registered,
+        # `codex mcp add` overwrites silently; `get` reads every TOML spelling for us.
+        exists=("mcp", "get", SERVER_NAME),
     ),
     App(
         "Gemini CLI",
@@ -346,15 +358,13 @@ def _last_line(output: str) -> str:
     return lines[-1] if lines else "no output"
 
 
-def _ask_replace(app: App) -> Callable[[], bool]:
+def _ask_replace(app: App, question: str) -> Callable[[], bool]:
     """One replace question per app, even when it has several config files."""
     answers: list[bool] = []
 
     def replace() -> bool:
         if not answers:
-            answers.append(
-                confirm(f"  {app.name} already starts opengsc differently. Replace that? [y/N] ")
-            )
+            answers.append(confirm(f"  {app.name} {question} [y/N] "))
         return answers[0]
 
     return replace
@@ -364,9 +374,9 @@ def _connect_cli(app: App, command: str, args: list[str]) -> tuple[str, list[str
     exe = shutil.which(app.cli)
     if not exe:
         raise ConnectError(f"the '{app.cli}' command was not found. Is {app.name} installed?")
-    replace = _ask_replace(app)
+    replace = _ask_replace(app, "already has an opengsc entry. Replace it with this one?")
     status = "added"
-    if app.registered and app.registered():
+    if app.exists and _run([exe, *app.exists])[0] == 0:
         if not replace():
             return "kept", []
         status = "updated"
@@ -379,19 +389,29 @@ def _connect_cli(app: App, command: str, args: list[str]) -> tuple[str, list[str
             raise ConnectError(f"removing the old entry failed: {_last_line(out)}")
         status = "updated"
         code, out = _run([exe, *app.add(command, args)])
+        if code != 0:
+            raise ConnectError(
+                f"the old entry was already removed, but adding the new one failed: "
+                f"{_last_line(out)}"
+            )
     if code != 0:
         raise ConnectError(f"'{app.cli} mcp add' failed: {_last_line(out)}")
     return status, []
 
 
 def _connect_json(app: App, command: str, args: list[str]) -> tuple[str, list[str]]:
-    if app.close_first and app.found():
+    entry, targets = app.entry(command, args), app.targets()
+    connected = all(_has_entry(path, app.section, entry) for path in targets)
+    if app.close_first and app.found() and not connected:
         print(f"  Quit {app.name} completely (also from the system tray or menu bar).")
         ask("  Press Enter once it is closed... ")
-    replace = _ask_replace(app)
+    replace = _ask_replace(app, "already starts opengsc differently. Replace that?")
     statuses, notes = [], []
-    for path in app.targets():
-        status, backup = add_server(path, app.section, app.entry(command, args), replace)
+    for path in targets:
+        try:
+            status, backup = add_server(path, app.section, entry, replace)
+        except ConnectError as exc:
+            raise ConnectError(str(exc), exc.path, notes) from None
         statuses.append(status)
         notes.append(f"Settings file: {path}")
         if backup:
@@ -402,8 +422,8 @@ def _connect_json(app: App, command: str, args: list[str]) -> tuple[str, list[st
     return "unchanged", notes
 
 
-def _print_manual(app: App, command: str, args: list[str]) -> None:
-    targets = app.targets()
+def _print_manual(app: App, command: str, args: list[str], path: Path | None = None) -> None:
+    targets = [path] if path else app.targets()
     if app.cli:
         print("  Do it by hand: run this in a terminal:")
         print(f"    {_shell_line([app.cli, *app.add(command, args)])}")
@@ -439,8 +459,10 @@ def _connect_one(app: App, command: str, args: list[str]) -> bool:
         connect_app = _connect_cli if app.cli else _connect_json
         status, notes = connect_app(app, command, args)
     except ConnectError as exc:
+        for note in exc.notes:  # copies updated before the one that failed
+            print(f"  {note}")
         print(f"  Could not connect it automatically: {exc}")
-        _print_manual(app, command, args)
+        _print_manual(app, command, args, exc.path)
         return False
     print(f"  {STATUS[status]}")
     for note in notes:
