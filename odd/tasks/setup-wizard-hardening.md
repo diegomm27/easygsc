@@ -39,6 +39,11 @@ this is a new candidate made of new commits on `feat/setup-wizard`.
 
 ## Pending follow-ups (out of scope)
 
+- Release 0.2.0: merge `feat/setup-wizard` to `main`, push, `gh release create
+  v0.2.0` so `release.yml` publishes to PyPI, then delete the pre-release
+  "Status: 0.2.0 is not on PyPI yet" block from the README Setup section and the
+  matching Troubleshooting row. Until that release the README documents a state
+  the index does not serve.
 - R2-001 readability `setup.py:109-121`
 - R2-002 readability `setup.py:118`
 - R2-003 readability `tests/test_setup.py:16`

@@ -1,4 +1,5 @@
-"""Guided setup: walk the Google Cloud steps, install the OAuth client, run auth.
+"""Guided setup: walk the Google Cloud steps, install the OAuth client, run auth, then
+connect the user's AI apps (``connect``).
 
 Only ``run_oauth_flow`` and the doctor check make network calls, through the existing
 allowlist guard. Nothing here prints the client secret.
@@ -14,8 +15,9 @@ import tempfile
 import webbrowser
 from pathlib import Path
 
-from . import __version__, auth
+from . import auth, connect
 from .cli import _doctor
+from .prompts import Cancelled, ask, confirm
 
 DOWNLOADS_DIR = Path.home() / "Downloads"
 
@@ -96,30 +98,11 @@ class WebClientError(SetupError):
     pass
 
 
-class Cancelled(Exception):
-    """The user cancelled setup with EOF, Ctrl+D or q/quit."""
-
-
-def _input(prompt: str) -> str:
-    try:
-        answer = input(prompt)
-    except EOFError:
-        raise Cancelled("no input") from None
-    if answer.strip().lower() in ("q", "quit"):
-        raise Cancelled("quit")
-    return answer
-
-
-def _confirm(prompt: str, default: bool = False) -> bool:
-    answer = _input(prompt).strip().lower()
-    return default if not answer else answer in ("y", "yes")
-
-
 def _step(url: str, explanation: str, no_browser: bool) -> None:
     print(f"\n{explanation}")
     if no_browser or not webbrowser.open(url):
         print(f"Open this URL: {url}")
-    _input("Press Enter when done... ")
+    ask("Press Enter when done... ")
 
 
 def load_client(path: Path) -> dict:
@@ -171,7 +154,7 @@ def _obtain_client(no_browser: bool) -> Path:
     source = find_downloaded()
     while True:
         if source is None:
-            raw = _input(f"Path to the downloaded JSON (look in {DOWNLOADS_DIR}): ")
+            raw = ask(f"Path to the downloaded JSON (look in {DOWNLOADS_DIR}): ")
             source = Path(raw.strip().strip("\"'").strip()).expanduser()  # Copy-as-path quotes
         try:
             load_client(source)
@@ -194,7 +177,7 @@ def install_client(source: Path, dest: Path | None = None) -> Path:
     except OSError:
         same = False
     if dest.is_file() and not same:
-        if not _confirm(f"{dest} already exists. Overwrite it? [y/N] "):
+        if not confirm(f"{dest} already exists. Overwrite it? [y/N] "):
             print(f"Keeping the existing file at {dest}.")
             return dest
     dest.parent.mkdir(parents=True, exist_ok=True)
@@ -218,12 +201,17 @@ def install_client(source: Path, dest: Path | None = None) -> Path:
     return dest
 
 
-def _next_steps() -> None:
-    package = f"opengsc@{__version__}"
-    snippet = {"mcpServers": {"opengsc": {"command": "uvx", "args": [package]}}}
-    print("\nNext: add opengsc to your MCP client.\nClaude Desktop (claude_desktop_config.json):")
-    print(json.dumps(snippet, indent=2))
-    print(f"Claude Code:\n  claude mcp add opengsc -- uvx {package}")
+def _connect_apps() -> int:
+    # The login is saved by now, so a cancel here must not read like a failed setup.
+    try:
+        return connect.choose_and_connect()
+    except Cancelled:
+        print(
+            "Connecting apps cancelled. Your Google login is saved; "
+            "run 'opengsc connect' when ready.",
+            file=sys.stderr,
+        )
+        return 2
 
 
 def _known_secrets() -> tuple[str, ...]:
@@ -269,8 +257,7 @@ def _authenticate(no_browser: bool) -> int:
         print("auth check failed; see the report above.", file=sys.stderr)
         return 1
     print(f"Authenticated; token saved to {auth.TOKEN_PATH}.")
-    _next_steps()
-    return 0
+    return _connect_apps()
 
 
 def _run(no_browser: bool) -> int:
@@ -278,16 +265,15 @@ def _run(no_browser: bool) -> int:
         print(f"opengsc already has an OAuth client configured ({where}).")
         if auth.TOKEN_PATH.is_file() and _doctor() == 0:
             print("Everything is ready: the client is installed and auth works.")
-            _next_steps()
-            return 0
-        if _confirm("Skip the Google Cloud walkthrough and run auth now? [Y/n] ", default=True):
+            return _connect_apps()
+        if confirm("Skip the Google Cloud walkthrough and run auth now? [Y/n] ", default=True):
             return _authenticate(no_browser)
 
     for url, explanation in STEPS:
         _step(url, explanation, no_browser)
     source = _obtain_client(no_browser)
     install_client(source)
-    if _confirm(f"Delete the downloaded copy at {source}? [y/N] "):
+    if confirm(f"Delete the downloaded copy at {source}? [y/N] "):
         try:
             source.unlink()
         except OSError:

@@ -62,6 +62,39 @@ class TestAuth:
         assert "no client configured" in err
 
 
+class TestConnect:
+    @pytest.fixture(autouse=True)
+    def no_env_auth(self, monkeypatch):
+        monkeypatch.delenv("OPENGSC_SERVICE_ACCOUNT_FILE", raising=False)
+        monkeypatch.delenv("OPENGSC_REFRESH_TOKEN", raising=False)
+
+    def test_runs_the_connect_flow_and_returns_its_code(self, config_dir, monkeypatch):
+        (config_dir / "token.json").write_text("{}")
+        monkeypatch.setattr(cli.connect, "run", lambda: 1)
+        assert cli.main(["connect"]) == 1
+
+    def test_warns_when_not_logged_in(self, config_dir, monkeypatch, capsys):
+        monkeypatch.setattr(cli.connect, "run", lambda: 0)
+        assert cli.main(["connect"]) == 0
+        assert "not logged in yet" in capsys.readouterr().out
+
+    def test_no_warning_once_logged_in(self, config_dir, monkeypatch, capsys):
+        (config_dir / "token.json").write_text("{}")
+        monkeypatch.setattr(cli.connect, "run", lambda: 0)
+        assert cli.main(["connect"]) == 0
+        assert "not logged in" not in capsys.readouterr().out
+
+    def test_keyboard_interrupt_exits_130(self, config_dir, monkeypatch, capsys):
+        monkeypatch.setattr(cli.connect, "run", mock.Mock(side_effect=KeyboardInterrupt))
+        assert cli.main(["connect"]) == 130
+        assert "opengsc connect" in capsys.readouterr().err
+
+    def test_help_lists_connect(self, capsys):
+        with pytest.raises(SystemExit):
+            cli.main(["--help"])
+        assert "setup,connect}" in capsys.readouterr().out
+
+
 class TestDoctor:
     def test_no_auth_exits_1_and_shows_paths_and_version(self, config_dir, monkeypatch, capsys):
         monkeypatch.delenv("OPENGSC_SERVICE_ACCOUNT_FILE", raising=False)

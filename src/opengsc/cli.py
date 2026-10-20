@@ -1,7 +1,7 @@
 """CLI: ``opengsc``/``opengsc serve`` runs MCP over stdio; ``auth`` runs the
 OAuth flow; ``doctor`` reports auth state and exits 1 when auth fails; ``setup``
-runs the guided wizard. Logs go to stderr (WARNING by default); secrets are
-never printed; doctor output goes to stdout.
+runs the guided wizard; ``connect`` adds opengsc to the user's AI apps. Logs go to
+stderr (WARNING by default); secrets are never printed; doctor output goes to stdout.
 """
 
 from __future__ import annotations
@@ -10,7 +10,7 @@ import argparse
 import logging
 import sys
 
-from . import __version__, api, auth, server
+from . import __version__, api, auth, connect, server
 
 
 def _setup_logging() -> None:
@@ -94,14 +94,29 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("doctor", help="show auth mode, token expiry, config paths, version")
     sub.add_parser("serve", help="run the MCP server over stdio (default)")
 
-    setup_parser = sub.add_parser("setup", help="guided setup: Google Cloud steps, login")
+    setup_parser = sub.add_parser(
+        "setup", help="guided setup: Google Cloud steps, login, connect your AI apps"
+    )
     setup_parser.add_argument(
         "--no-browser",
         action="store_true",
         help="print URLs instead of opening a browser window",
     )
 
+    sub.add_parser(
+        "connect", help="add opengsc to your AI apps (Claude, Cursor, VS Code, and more)"
+    )
+
     args = parser.parse_args(argv)
+
+    if args.command == "connect":
+        if _auth_mode() == "none":
+            print("Note: you are not logged in yet. Run 'opengsc setup' first.")
+        try:
+            return connect.run()
+        except KeyboardInterrupt:
+            print("\nconnect interrupted: run 'opengsc connect' again.", file=sys.stderr)
+            return 130
 
     if args.command == "setup":
         from . import setup  # lazy: setup imports _doctor from this module

@@ -45,8 +45,9 @@ def write_client(path, client_id="cid", secret=SECRET, key="installed"):
     return path
 
 
-# One Enter per walkthrough step, then decline deleting the download.
-WALKTHROUGH = ("",) * 7
+# One Enter per walkthrough step, decline deleting the download, then Enter at the
+# connect menu (conftest leaves no real apps, so Enter shows the settings to copy).
+WALKTHROUGH = ("",) * 8
 
 
 def feed(*answers):
@@ -216,10 +217,12 @@ class TestShortCircuit:
         monkeypatch.setattr(setup.auth, "run_oauth_flow", run_flow)
         opener = mock.Mock(return_value=True)
         monkeypatch.setattr(setup.webbrowser, "open", opener)
+        monkeypatch.setattr("builtins.input", feed(""))
 
         assert setup.run() == 0
         out = capsys.readouterr().out
         assert "Everything is ready" in out
+        assert "Connect opengsc to your AI apps" in out
         assert "console.cloud.google.com" not in out
         assert SECRET not in out
         run_flow.assert_not_called()
@@ -232,7 +235,7 @@ class TestShortCircuit:
         doctor_ok(monkeypatch)
         calls = []
         monkeypatch.setattr(setup.auth, "run_oauth_flow", fake_auth(config_dir, calls))
-        monkeypatch.setattr("builtins.input", feed(""))
+        monkeypatch.setattr("builtins.input", feed("", ""))
         opener = mock.Mock(return_value=True)
         monkeypatch.setattr(setup.webbrowser, "open", opener)
 
@@ -248,7 +251,7 @@ class TestShortCircuit:
         monkeypatch.setenv("OPENGSC_CLIENT_SECRET", "env-secret")
         doctor_ok(monkeypatch)
         monkeypatch.setattr(setup.auth, "run_oauth_flow", fake_auth(config_dir))
-        monkeypatch.setattr("builtins.input", feed(""))
+        monkeypatch.setattr("builtins.input", feed("", ""))
 
         assert setup.run(no_browser=True) == 0
         out = capsys.readouterr().out
@@ -274,8 +277,11 @@ class TestWalkthrough:
             assert url in out
         assert calls == [True]
         opener.assert_not_called()
-        assert "claude mcp add opengsc" in out
-        assert "claude_desktop_config.json" in out
+        # Setup ends at the connect menu; its settings start this exact opengsc.
+        command, args = setup.connect.launch_command()
+        assert "Connect opengsc to your AI apps" in out
+        assert f"Command:  {command}" in out
+        assert all(f"      {arg}\n" in out for arg in args)
 
     def test_default_mode_opens_the_browser_for_every_step(
         self, config_dir, downloads, monkeypatch
@@ -339,7 +345,7 @@ class TestSecretOutput:
         doctor_ok(monkeypatch)
         seen = []
         monkeypatch.setattr(setup.auth, "run_oauth_flow", fake_auth(config_dir, kwargs_seen=seen))
-        monkeypatch.setattr("builtins.input", feed(""))
+        monkeypatch.setattr("builtins.input", feed("", ""))
 
         assert setup.run(no_browser=True) == 0
         out = capsys.readouterr().out
@@ -362,7 +368,7 @@ class TestSecretOutput:
         captured = capsys.readouterr()
         assert "auth failed: denied" in captured.err
         assert "opengsc setup" in captured.err
-        assert "claude_desktop_config.json" not in captured.out
+        assert "Connect opengsc to your AI apps" not in captured.out
 
     def test_error_text_redacts_client_secret_and_refresh_token(
         self, config_dir, monkeypatch, capsys
@@ -427,6 +433,20 @@ class TestCancellation:
         monkeypatch.setattr("builtins.input", feed("quit"))
         assert setup.run(no_browser=True) == 2
         assert "cancelled" in capsys.readouterr().err
+
+    def test_quit_at_the_connect_menu_says_the_login_is_saved(
+        self, config_dir, downloads, monkeypatch, capsys
+    ):
+        write_client(config_dir / "client_secret.json")
+        doctor_ok(monkeypatch)
+        monkeypatch.setattr(setup.auth, "run_oauth_flow", fake_auth(config_dir))
+        monkeypatch.setattr("builtins.input", feed("", "q"))
+
+        assert setup.run(no_browser=True) == 2
+        captured = capsys.readouterr()
+        assert "Authenticated" in captured.out
+        assert "login is saved" in captured.err
+        assert "opengsc connect" in captured.err
 
 
 class TestInterrupt:

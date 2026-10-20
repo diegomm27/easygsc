@@ -3,13 +3,13 @@
 [![CI](https://github.com/diegomm27/opengsc/actions/workflows/ci.yml/badge.svg)](https://github.com/diegomm27/opengsc/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-Let Claude (or any MCP client) read your **Google Search Console** data and help you with SEO.
+Let your AI app (Claude, Codex, Gemini, Cursor, VS Code Copilot or any other MCP app) read your **Google Search Console** data and help you with SEO.
 
 - **Read-only.** It can see your data, never change it.
-- **Small.** 4 tools, ~900 lines of Python you can audit in one sitting.
+- **Small.** 4 tools, ~1,600 lines of Python you can audit in one sitting.
 - **Private.** Talks only to Google. No telemetry, no third-party servers.
 
-Ask things like *"Which queries get impressions but few clicks?"* or *"Is this page indexed?"* and Claude pulls the real numbers from Search Console.
+Ask things like *"Which queries get impressions but few clicks?"* or *"Is this page indexed?"* and your AI pulls the real numbers from Search Console.
 
 ---
 
@@ -21,6 +21,18 @@ You need:
 - [uv](https://docs.astral.sh/uv/getting-started/installation/) installed. It also installs Python for you if needed.
   - Windows: `winget install astral-sh.uv`
   - macOS/Linux: `curl -LsSf https://astral.sh/uv/install.sh | sh`
+
+> **Status: `0.2.0` is not on PyPI yet.** PyPI still serves `0.1.0`, which has no
+> `setup`, so `uvx opengsc setup` fails with `invalid choice: 'setup'` until the
+> release. Until then, run the current code straight from GitHub:
+>
+> ```bash
+> uvx --from "git+https://github.com/diegomm27/opengsc@feat/setup-wizard" opengsc setup
+> ```
+>
+> (or `uv run opengsc setup` from a clone). The apps it connects start that exact
+> commit, so they keep working; after the release, `uvx opengsc connect` switches
+> them to the PyPI version.
 
 ### Step 1. Run the guided setup
 
@@ -37,15 +49,37 @@ It walks you through the Google Cloud steps one at a time, opening the right pag
 5. Fill in Branding with your website's links (no logo).
 6. Publish the app.
 
-Then it finds the JSON in your Downloads folder (or asks for the path), checks it is a Desktop client, copies it to `~/.config/opengsc/client_secret.json` with `0600` permissions, runs the Google login, checks that your properties are readable, and prints the snippet to connect Claude.
+Then it finds the JSON in your Downloads folder (or asks for the path), checks it is a Desktop client, copies it to `~/.config/opengsc/client_secret.json` with `0600` permissions, runs the Google login, checks that your properties are readable, and moves on to Step 2.
 
 - It never overwrites a different client file without asking, and only deletes your download if you say yes.
 - No browser? Add `--no-browser` to print the URLs instead.
-- Ctrl+C at any point is safe; run `uvx opengsc setup` again to resume.
+- Type `q` or press Ctrl+C at any prompt to stop; run `uvx opengsc setup` again to resume.
 
-### Step 2. Connect it to Claude
+### Step 2. Pick your AI apps
 
-opengsc runs on your computer, so it works in **Claude Desktop** and **Claude Code** (not in claude.ai in the browser).
+Setup ends with a numbered list of AI apps. The ones it finds on your computer are marked; press **Enter** to connect those, or type the numbers you want, like `1,3`.
+
+| App | What setup does |
+| --- | --- |
+| Claude Desktop | Asks you to quit it, then adds opengsc to `claude_desktop_config.json` (both copies on a Microsoft Store install). |
+| Claude Code | Runs `claude mcp add --scope user`. |
+| Codex (OpenAI) | Runs `codex mcp add`. |
+| Gemini CLI | Adds it to `~/.gemini/settings.json`. |
+| Google Antigravity | Adds it to `~/.gemini/config/mcp_config.json`. |
+| Cursor | Adds it to `~/.cursor/mcp.json`. |
+| VS Code (GitHub Copilot) | Adds it to your user `mcp.json`. |
+| Windsurf / Devin Desktop | Adds it to `mcp_config.json`. |
+| LM Studio | Adds it to `~/.lmstudio/mcp.json`. |
+| Another app | Shows the command, arguments and JSON to paste into the app's MCP settings. |
+
+Then do what it says for each app (usually: restart it) and ask *"List my Search Console sites."*
+
+- **Your settings are safe.** It only edits plain JSON files, saves a backup next to each one first (`<file>.<date>.bak`), keeps all your other settings, and asks before replacing an existing `opengsc` entry. A file it can't edit safely, such as one with comments, is left alone and you get the exact text to paste.
+- **Add an app later** with `opengsc connect` (`uvx opengsc connect`).
+- **Browser-only chats** (ChatGPT, claude.ai or Gemini on the web) can't start programs on your computer, so they can't use opengsc. Use their desktop or command-line app: Claude Desktop, Claude Code, Codex or Gemini CLI.
+
+<details>
+<summary>Connect by hand instead</summary>
 
 **Claude Desktop:** open *Settings → Developer → Edit Config* and add `opengsc` to `claude_desktop_config.json`:
 
@@ -75,13 +109,18 @@ claude mcp add opengsc -- uvx opengsc@0.2.0
 
 **Any other MCP client:** run `uvx opengsc@0.2.0` over stdio.
 
+If the app can't find `uvx`, use its full path (`which uvx`, or `where uvx` on Windows) as the command. `opengsc connect` does this for you.
+
+</details>
+
 ---
 
 ## CLI commands
 
 | Command | What it does |
 | --- | --- |
-| `opengsc setup` | Guided setup: Google Cloud steps, client file, login, check. |
+| `opengsc setup` | Guided setup: Google Cloud steps, client file, login, check, connect your AI apps. |
+| `opengsc connect` | Add opengsc to your AI apps (the last step of `setup`, on its own). |
 | `opengsc auth` | Run the Google login (`--no-browser` prints the URL). |
 | `opengsc doctor` | Auth mode, token expiry, readable properties, config paths, version. |
 | `opengsc serve` | Run the MCP server over stdio (also the default with no arguments). |
@@ -230,7 +269,10 @@ The output ends with a metadata block. `more_may_exist: true` means the page was
 | `401` / `invalid_grant` | Login expired or was revoked. Usually the app was left in *Testing*: publish it (Manual setup, step 1.6), then run `opengsc auth` again. |
 | `403` / "User does not have permission" | Wrong property name or no access. Use the exact string from `list_sites()`: `sc-domain:example.com` for domain properties, `https://example.com/` (with the trailing slash) for URL-prefix ones. |
 | `doctor` shows 0 properties | You logged in with an account that has no Search Console access. Run `auth` again with the right one. |
-| Claude doesn't see the tools | Fully restart Claude Desktop. In Claude Code, run `claude mcp list`. |
+| `invalid choice: 'setup'` (or `opengsc@0.2.0` won't resolve) | PyPI still serves `0.1.0`. Use the command in the Setup status note. |
+| Your AI app doesn't see the tools | Fully quit and reopen the app (Claude Desktop: also from the tray/menu bar icon). Claude Code: `claude mcp list`. Codex: `codex mcp list`. Still nothing? Run `opengsc connect` again: it shows the settings file it used. |
+| `spawn uvx ENOENT` / "command not found" | The app can't find uv. Run `opengsc connect` again: it writes the full path to uv. |
+| Want to undo a connection | Each edited file has a `.bak` copy next to it; or delete the `opengsc` entry. Claude Code: `claude mcp remove opengsc --scope user`. Codex: `codex mcp remove opengsc`. |
 | `429` / quota exceeded | Google's daily limits. Wait and retry. |
 | No data for old dates | Search Console only keeps 16 months. |
 | Query totals don't add up | Google hides rare queries for privacy, so per-query sums are lower than the site total. |
@@ -245,6 +287,7 @@ To revoke access at any time: [myaccount.google.com/permissions](https://myaccou
 - **Network lock:** every request goes through one guard ([`src/opengsc/allowlist.py`](src/opengsc/allowlist.py)) that only allows `www.googleapis.com`, `searchconsole.googleapis.com`, `oauth2.googleapis.com` and `accounts.google.com`. Anything else, redirects included, fails before it's sent.
 - **Endpoints used:** `sites.list`, `searchAnalytics.query`, `sitemaps.list`, `urlInspection.index.inspect`. Nothing else.
 - **Files on disk:** `~/.config/opengsc/client_secret.json` (yours, installed by `opengsc setup` with `0600` permissions) and `~/.config/opengsc/token.json` (your login, also `0600`; best effort on Windows). **Keep `token.json` private:** whoever has it can read your Search Console.
+- **AI app settings:** `setup` and `connect` only touch the apps you pick, back up each file first and make no network calls ([`src/opengsc/connect.py`](src/opengsc/connect.py)).
 - **Dependencies:** `mcp`, `google-auth`, `google-auth-oauthlib`, pinned exactly. That's all.
 - **Not included on purpose:** writes, analysis or scoring, telemetry, update checks, bundled prompts.
 
