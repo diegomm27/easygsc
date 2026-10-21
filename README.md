@@ -22,18 +22,6 @@ You need:
   - Windows: `winget install astral-sh.uv`
   - macOS/Linux: `curl -LsSf https://astral.sh/uv/install.sh | sh`
 
-> **Status: `0.2.0` is not on PyPI yet.** PyPI still serves `0.1.0`, which has no
-> `setup`, so `uvx easygsc setup` fails with `invalid choice: 'setup'` until the
-> release. Until then, run the current code straight from GitHub:
->
-> ```bash
-> uvx --from "git+https://github.com/diegomm27/easygsc@feat/setup-wizard" easygsc setup
-> ```
->
-> (or `uv run easygsc setup` from a clone). The apps it connects start that exact
-> commit, so they keep working; after the release, `uvx easygsc connect` switches
-> them to the PyPI version.
-
 ### Step 1. Run the guided setup
 
 ```bash
@@ -270,7 +258,6 @@ The output ends with a metadata block. `more_may_exist: true` means the page was
 | `401` / `invalid_grant` | Login expired or was revoked. Usually the app was left in *Testing*: publish it (Manual setup, step 1.6), then run `easygsc auth` again. |
 | `403` / "User does not have permission" | Wrong property name or no access. Use the exact string from `list_sites()`: `sc-domain:example.com` for domain properties, `https://example.com/` (with the trailing slash) for URL-prefix ones. |
 | `doctor` shows 0 properties | You logged in with an account that has no Search Console access. Run `auth` again with the right one. |
-| `invalid choice: 'setup'` (or `easygsc@0.2.0` won't resolve) | PyPI still serves `0.1.0`. Use the command in the Setup status note. |
 | Your AI app doesn't see the tools | Fully quit and reopen the app (Claude Desktop: also from the tray/menu bar icon). Claude Code: `claude mcp list`. Codex: `codex mcp list`. Still nothing? Run `easygsc connect` again: it shows the settings file it used. |
 | `spawn uvx ENOENT` / "command not found" | The app can't find uv. Run `easygsc connect` again: it writes the full path to uv. |
 | Want to undo a connection | Each edited file has a `.bak` copy next to it; or delete the `easygsc` entry. Claude Code: `claude mcp remove easygsc --scope user`. Codex: `codex mcp remove easygsc`. |
