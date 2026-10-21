@@ -37,7 +37,7 @@ def _hint(status: int, reason: str | None) -> str | None:
             "URL-prefix properties, and confirm the account has access."
         )
     if status == 401 or reason == "invalid_grant":
-        return "The token is expired or revoked; run 'opengsc auth' again."
+        return "The token is expired or revoked; run 'easygsc auth' again."
     if status == 429 or reason in ("rateLimitExceeded", "quotaExceeded"):
         return (
             "Quota exceeded. Search Console enforces per-day/per-property "

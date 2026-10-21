@@ -5,15 +5,15 @@ from unittest import mock
 
 import pytest
 
-from opengsc import cli
-from opengsc.api import ApiError
+from easygsc import cli
+from easygsc.api import ApiError
 
 
 @pytest.fixture
 def config_dir(tmp_path, monkeypatch):
-    from opengsc import auth
+    from easygsc import auth
 
-    d = tmp_path / "opengsc-config"
+    d = tmp_path / "easygsc-config"
     d.mkdir()
     monkeypatch.setattr(auth, "CONFIG_DIR", d)
     monkeypatch.setattr(auth, "TOKEN_PATH", d / "token.json")
@@ -65,8 +65,8 @@ class TestAuth:
 class TestConnect:
     @pytest.fixture(autouse=True)
     def no_env_auth(self, monkeypatch):
-        monkeypatch.delenv("OPENGSC_SERVICE_ACCOUNT_FILE", raising=False)
-        monkeypatch.delenv("OPENGSC_REFRESH_TOKEN", raising=False)
+        monkeypatch.delenv("EASYGSC_SERVICE_ACCOUNT_FILE", raising=False)
+        monkeypatch.delenv("EASYGSC_REFRESH_TOKEN", raising=False)
 
     def test_runs_the_connect_flow_and_returns_its_code(self, config_dir, monkeypatch):
         (config_dir / "token.json").write_text("{}")
@@ -87,7 +87,7 @@ class TestConnect:
     def test_keyboard_interrupt_exits_130(self, config_dir, monkeypatch, capsys):
         monkeypatch.setattr(cli.connect, "run", mock.Mock(side_effect=KeyboardInterrupt))
         assert cli.main(["connect"]) == 130
-        assert "opengsc connect" in capsys.readouterr().err
+        assert "easygsc connect" in capsys.readouterr().err
 
     def test_help_lists_connect(self, capsys):
         with pytest.raises(SystemExit):
@@ -97,16 +97,16 @@ class TestConnect:
 
 class TestDoctor:
     def test_no_auth_exits_1_and_shows_paths_and_version(self, config_dir, monkeypatch, capsys):
-        monkeypatch.delenv("OPENGSC_SERVICE_ACCOUNT_FILE", raising=False)
+        monkeypatch.delenv("EASYGSC_SERVICE_ACCOUNT_FILE", raising=False)
         code = cli.main(["doctor"])
         assert code == 1
         out = capsys.readouterr().out
-        assert "opengsc" in out  # version
+        assert "easygsc" in out  # version
         assert str(config_dir) in out
         assert "none" in out  # auth mode
 
     def test_token_mode_counts_properties(self, config_dir, monkeypatch, capsys):
-        monkeypatch.delenv("OPENGSC_SERVICE_ACCOUNT_FILE", raising=False)
+        monkeypatch.delenv("EASYGSC_SERVICE_ACCOUNT_FILE", raising=False)
         config_dir.joinpath("token.json").write_text(
             json.dumps(
                 {
@@ -141,7 +141,7 @@ class TestDoctor:
 
         sa_path = config_dir / "sa.json"
         sa_path.write_text(json.dumps(SA_FILE))
-        monkeypatch.setenv("OPENGSC_SERVICE_ACCOUNT_FILE", str(sa_path))
+        monkeypatch.setenv("EASYGSC_SERVICE_ACCOUNT_FILE", str(sa_path))
         monkeypatch.setattr(
             cli.api, "list_sites", lambda *a, **k: {"siteEntry": [{"siteUrl": "s"}]}
         )
@@ -149,8 +149,8 @@ class TestDoctor:
         assert "service-account" in capsys.readouterr().out
 
     def test_refresh_token_env_mode_never_prints_token(self, config_dir, monkeypatch, capsys):
-        monkeypatch.delenv("OPENGSC_SERVICE_ACCOUNT_FILE", raising=False)
-        monkeypatch.setenv("OPENGSC_REFRESH_TOKEN", "1//SECRET_ENV_REFRESH")
+        monkeypatch.delenv("EASYGSC_SERVICE_ACCOUNT_FILE", raising=False)
+        monkeypatch.setenv("EASYGSC_REFRESH_TOKEN", "1//SECRET_ENV_REFRESH")
         monkeypatch.setattr(cli.api, "list_sites", lambda *a, **k: {"siteEntry": []})
         assert cli.main(["doctor"]) == 0
         out = capsys.readouterr().out
@@ -158,7 +158,7 @@ class TestDoctor:
         assert "1//SECRET_ENV_REFRESH" not in out
 
     def test_api_failure_exits_1_and_reports(self, config_dir, monkeypatch, capsys):
-        monkeypatch.delenv("OPENGSC_SERVICE_ACCOUNT_FILE", raising=False)
+        monkeypatch.delenv("EASYGSC_SERVICE_ACCOUNT_FILE", raising=False)
         config_dir.joinpath("token.json").write_text(json.dumps({"refresh_token": "r"}))
         monkeypatch.setattr(
             cli.api, "list_sites", mock.MagicMock(side_effect=ApiError(401, "denied"))
@@ -169,7 +169,7 @@ class TestDoctor:
     def test_unknown_property_count_failure_does_not_mask_mode(
         self, config_dir, monkeypatch, capsys
     ):
-        monkeypatch.delenv("OPENGSC_SERVICE_ACCOUNT_FILE", raising=False)
+        monkeypatch.delenv("EASYGSC_SERVICE_ACCOUNT_FILE", raising=False)
         config_dir.joinpath("token.json").write_text(json.dumps({"refresh_token": "r"}))
         monkeypatch.setattr(
             cli.api, "list_sites", mock.MagicMock(side_effect=ApiError(403, "denied"))
@@ -187,6 +187,6 @@ class TestLogging:
         # Bind the handler to the current (captured) stderr, exactly as a
         # fresh main() invocation would.
         cli._setup_logging()
-        logging.getLogger("opengsc").error("an error line")
+        logging.getLogger("easygsc").error("an error line")
         captured = capsys.readouterr()
         assert "an error line" in captured.err

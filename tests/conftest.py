@@ -4,7 +4,7 @@ from unittest import mock
 
 import pytest
 
-from opengsc import connect
+from easygsc import connect
 
 
 @pytest.fixture(autouse=True)

@@ -1,11 +1,11 @@
 {
-  "name": "opengsc",
+  "name": "easygsc",
   "owner": {
     "name": "diegomm27"
   },
   "plugins": [
     {
-      "name": "opengsc",
+      "name": "easygsc",
       "source": "./",
       "description": "Read-only Google Search Console data for Claude: properties, search analytics, sitemaps, URL inspection."
     }

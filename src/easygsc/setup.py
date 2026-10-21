@@ -30,9 +30,9 @@ CLIENT_URL = "https://console.cloud.google.com/auth/clients"
 BRANDING_URL = "https://console.cloud.google.com/auth/branding"
 
 # Google requires a home page and privacy policy link before an external app can be
-# published. They point at the user's own site; opengsc's privacy statement (the
+# published. They point at the user's own site; easygsc's privacy statement (the
 # README's security section) is the fallback for sites without a privacy page.
-PRIVACY_URL = "https://github.com/diegomm27/opengsc#security-and-transparency"
+PRIVACY_URL = "https://github.com/diegomm27/easygsc#security-and-transparency"
 
 CLIENT_STEP = (
     CLIENT_URL,
@@ -40,7 +40,7 @@ CLIENT_STEP = (
     (
         "Click 'Create client'.",
         "Application type: Desktop app (not Web application).",
-        "Name: opengsc.",
+        "Name: easygsc.",
         "Click 'Create', then 'Download JSON' right away: Google won't show the secret again.",
         "Leave the file in Downloads; setup picks it up from there.",
     ),
@@ -51,7 +51,7 @@ STEPS = (
         PROJECT_URL,
         "Create a Google Cloud project",
         (
-            "Project name: opengsc (any name works).",
+            "Project name: easygsc (any name works).",
             "Click 'Create', then select it in the project picker at the top.",
         ),
     ),
@@ -68,7 +68,7 @@ STEPS = (
         "Set up the consent screen",
         (
             "Click 'Get started'.",
-            "App name: opengsc.",
+            "App name: easygsc.",
             "User support email: your email.",
             "Audience: External.",
             "Contact information: your email.",
@@ -98,7 +98,7 @@ STEPS = (
             "In 'Testing' Google expires your login every 7 days, so publish it.",
             "Publishing does not expose your data: each login sees only its own site.",
             "At login Google warns the app isn't verified; that is expected for a",
-            "personal app. Click 'Advanced', then 'Go to opengsc'.",
+            "personal app. Click 'Advanced', then 'Go to easygsc'.",
         ),
     ),
 )
@@ -109,7 +109,7 @@ class SetupError(RuntimeError):
 
 
 AUTH_FIX = (
-    "Rerun 'opengsc setup' once that is fixed. If the client file looks incomplete or "
+    "Rerun 'easygsc setup' once that is fixed. If the client file looks incomplete or "
     "was edited, download it again from the Clients page."
 )
 
@@ -143,14 +143,14 @@ def load_client(path: Path) -> dict:
         return data
     if isinstance(data, dict) and "web" in data:
         raise WebClientError(
-            "That is a Web application client; opengsc needs a Desktop app client."
+            "That is a Web application client; easygsc needs a Desktop app client."
         )
     raise SetupError(f"{path} is not a Google OAuth client file (no 'installed' key).")
 
 
 def _configured_where() -> str | None:
-    if os.environ.get("OPENGSC_CLIENT_ID") and os.environ.get("OPENGSC_CLIENT_SECRET"):
-        return "the OPENGSC_CLIENT_ID/OPENGSC_CLIENT_SECRET env vars"
+    if os.environ.get("EASYGSC_CLIENT_ID") and os.environ.get("EASYGSC_CLIENT_SECRET"):
+        return "the EASYGSC_CLIENT_ID/EASYGSC_CLIENT_SECRET env vars"
     try:
         load_client(auth.CLIENT_SECRET_PATH)
     except SetupError:
@@ -260,7 +260,7 @@ def _connect_apps() -> int:
     except Cancelled:
         print(
             "Connecting apps cancelled. Your Google login is saved; "
-            "run 'opengsc connect' when ready.",
+            "run 'easygsc connect' when ready.",
             file=sys.stderr,
         )
         return 2
@@ -268,7 +268,7 @@ def _connect_apps() -> int:
 
 def _known_secrets() -> tuple[str, ...]:
     secrets = set()
-    for var in ("OPENGSC_CLIENT_SECRET", "OPENGSC_REFRESH_TOKEN"):
+    for var in ("EASYGSC_CLIENT_SECRET", "EASYGSC_REFRESH_TOKEN"):
         if value := os.environ.get(var):
             secrets.add(value)
     try:
@@ -325,7 +325,7 @@ def _authenticate(no_browser: bool) -> int:
 
 def _run(no_browser: bool) -> int:
     if where := _configured_where():
-        print(f"opengsc already has an OAuth client configured ({where}).")
+        print(f"easygsc already has an OAuth client configured ({where}).")
         if auth.TOKEN_PATH.is_file() and _doctor_ok():
             print("Everything is ready: the client is installed and auth works.")
             return _connect_apps()
@@ -349,7 +349,7 @@ def run(no_browser: bool = False) -> int:
     try:
         return _run(no_browser)
     except Cancelled:
-        print("setup cancelled; run 'opengsc setup' again when ready.", file=sys.stderr)
+        print("setup cancelled; run 'easygsc setup' again when ready.", file=sys.stderr)
         return 2
     except SetupError as exc:
         print(f"setup failed: {_redact(str(exc))}", file=sys.stderr)

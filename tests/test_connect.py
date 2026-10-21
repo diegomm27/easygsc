@@ -1,4 +1,4 @@
-"""Tests for connecting opengsc to AI apps: files, PATH and app CLIs all faked."""
+"""Tests for connecting easygsc to AI apps: files, PATH and app CLIs all faked."""
 
 import json
 import os
@@ -7,10 +7,10 @@ from unittest import mock
 
 import pytest
 
-from opengsc import __version__, connect
+from easygsc import __version__, connect
 
 SHA = "bbbc2a472fd253cac4bb9c2eed3b2aae919b197c"
-ENTRY = {"command": "/abs/uvx", "args": ["opengsc@0.2.0"]}
+ENTRY = {"command": "/abs/uvx", "args": ["easygsc@0.2.0"]}
 
 
 def on_path(monkeypatch, **tools):
@@ -25,15 +25,15 @@ class TestLaunchCommand:
     def test_index_release_runs_the_pinned_version(self, monkeypatch):
         installed_from(monkeypatch, None)
         on_path(monkeypatch, uvx="/abs/uvx")
-        assert connect.launch_command() == ("/abs/uvx", [f"opengsc@{__version__}"])
+        assert connect.launch_command() == ("/abs/uvx", [f"easygsc@{__version__}"])
 
     def test_git_install_pins_the_exact_commit(self, monkeypatch):
-        url = "https://github.com/diegomm27/opengsc"
+        url = "https://github.com/diegomm27/easygsc"
         installed_from(monkeypatch, {"url": url, "vcs_info": {"vcs": "git", "commit_id": SHA}})
         on_path(monkeypatch, uvx="/abs/uvx")
         assert connect.launch_command() == (
             "/abs/uvx",
-            ["--from", f"git+{url}@{SHA}", "opengsc"],
+            ["--from", f"git+{url}@{SHA}", "easygsc"],
         )
 
     def test_editable_clone_runs_from_the_clone(self, monkeypatch, tmp_path):
@@ -41,24 +41,24 @@ class TestLaunchCommand:
         on_path(monkeypatch, uv="/abs/uv")
         assert connect.launch_command() == (
             "/abs/uv",
-            ["run", "--directory", str(tmp_path), "opengsc"],
+            ["run", "--directory", str(tmp_path), "easygsc"],
         )
 
     def test_local_folder_install_runs_from_that_folder(self, monkeypatch, tmp_path):
         installed_from(monkeypatch, {"url": tmp_path.as_uri(), "dir_info": {}})
         on_path(monkeypatch, uvx="/abs/uvx")
-        assert connect.launch_command() == ("/abs/uvx", ["--from", str(tmp_path), "opengsc"])
+        assert connect.launch_command() == ("/abs/uvx", ["--from", str(tmp_path), "easygsc"])
 
     def test_wheel_install_runs_from_that_wheel(self, monkeypatch, tmp_path):
-        wheel = tmp_path / "opengsc-0.2.0-py3-none-any.whl"
+        wheel = tmp_path / "easygsc-0.2.0-py3-none-any.whl"
         installed_from(monkeypatch, {"url": wheel.as_uri(), "archive_info": {}})
         on_path(monkeypatch, uvx="/abs/uvx")
-        assert connect.launch_command() == ("/abs/uvx", ["--from", str(wheel), "opengsc"])
+        assert connect.launch_command() == ("/abs/uvx", ["--from", str(wheel), "easygsc"])
 
     def test_falls_back_to_the_bare_tool_name_when_not_on_path(self, monkeypatch):
         installed_from(monkeypatch, None)
         on_path(monkeypatch)
-        assert connect.launch_command() == ("uvx", [f"opengsc@{__version__}"])
+        assert connect.launch_command() == ("uvx", [f"easygsc@{__version__}"])
 
 
 def never_asked():
@@ -73,7 +73,7 @@ class TestAddServer:
     def test_creates_a_missing_file_and_its_folder(self, tmp_path):
         path = tmp_path / "App" / "config.json"
         assert connect.add_server(path, "mcpServers", ENTRY, never_asked) == ("added", None)
-        assert json.loads(path.read_text()) == {"mcpServers": {"opengsc": ENTRY}}
+        assert json.loads(path.read_text()) == {"mcpServers": {"easygsc": ENTRY}}
         assert leftovers(path.parent, path.name) == []
 
     def test_keeps_other_servers_and_settings_and_backs_up_first(self, tmp_path):
@@ -88,7 +88,7 @@ class TestAddServer:
         assert status == "added"
         assert json.loads(path.read_text()) == {
             "theme": "dark",
-            "mcpServers": {"other": {"command": "x", "args": []}, "opengsc": ENTRY},
+            "mcpServers": {"other": {"command": "x", "args": []}, "easygsc": ENTRY},
         }
         assert backup.parent == tmp_path
         assert backup.name.startswith("config.json.") and backup.name.endswith(".bak")
@@ -101,12 +101,12 @@ class TestAddServer:
         connect.add_server(path, "servers", ENTRY, never_asked)
         assert json.loads(path.read_text()) == {
             "editor.fontSize": 14,
-            "servers": {"opengsc": ENTRY},
+            "servers": {"easygsc": ENTRY},
         }
 
     def test_an_identical_entry_writes_nothing(self, tmp_path):
         path = tmp_path / "config.json"
-        original = json.dumps({"mcpServers": {"opengsc": ENTRY}})
+        original = json.dumps({"mcpServers": {"easygsc": ENTRY}})
         path.write_text(original)
         assert connect.add_server(path, "mcpServers", ENTRY, never_asked) == ("unchanged", None)
         assert path.read_text() == original
@@ -114,7 +114,7 @@ class TestAddServer:
 
     def test_a_different_entry_is_replaced_only_after_a_yes(self, tmp_path):
         path = tmp_path / "config.json"
-        original = json.dumps({"mcpServers": {"opengsc": {"command": "old", "args": []}}})
+        original = json.dumps({"mcpServers": {"easygsc": {"command": "old", "args": []}}})
         path.write_text(original)
 
         assert connect.add_server(path, "mcpServers", ENTRY, lambda: False) == ("kept", None)
@@ -123,7 +123,7 @@ class TestAddServer:
 
         status, backup = connect.add_server(path, "mcpServers", ENTRY, lambda: True)
         assert status == "updated"
-        assert json.loads(path.read_text()) == {"mcpServers": {"opengsc": ENTRY}}
+        assert json.loads(path.read_text()) == {"mcpServers": {"easygsc": ENTRY}}
         assert backup.read_text() == original
 
     @pytest.mark.parametrize(
@@ -147,13 +147,13 @@ class TestAddServer:
         path = tmp_path / "config.json"
         path.write_bytes(b'\xef\xbb\xbf{"mcpServers": {}}')
         assert connect.add_server(path, "mcpServers", ENTRY, never_asked)[0] == "added"
-        assert json.loads(path.read_text(encoding="utf-8")) == {"mcpServers": {"opengsc": ENTRY}}
+        assert json.loads(path.read_text(encoding="utf-8")) == {"mcpServers": {"easygsc": ENTRY}}
 
     def test_an_empty_file_counts_as_empty_settings(self, tmp_path):
         path = tmp_path / "config.json"
         path.write_text("  \n")
         assert connect.add_server(path, "mcpServers", ENTRY, never_asked)[0] == "added"
-        assert json.loads(path.read_text()) == {"mcpServers": {"opengsc": ENTRY}}
+        assert json.loads(path.read_text()) == {"mcpServers": {"easygsc": ENTRY}}
 
     def test_a_failed_replace_keeps_the_original_and_no_temp_file(self, tmp_path, monkeypatch):
         path = tmp_path / "config.json"
@@ -196,7 +196,7 @@ class TestAddServer:
                 leftover.chmod(stat.S_IREAD | stat.S_IWRITE)
 
     def test_a_read_only_config_is_rewritten_and_stays_writable_by_its_owner(self, tmp_path):
-        # Some apps protect their config; opengsc must not leave it read-only, or the
+        # Some apps protect their config; easygsc must not leave it read-only, or the
         # next connect (and, on Windows, this very replace) cannot write it again.
         path = tmp_path / "config.json"
         path.write_text(json.dumps({"mcpServers": {"other": {"command": "x", "args": []}}}))
@@ -206,7 +206,7 @@ class TestAddServer:
 
             assert status == "added"
             assert json.loads(path.read_text()) == {
-                "mcpServers": {"other": {"command": "x", "args": []}, "opengsc": ENTRY}
+                "mcpServers": {"other": {"command": "x", "args": []}, "easygsc": ENTRY}
             }
             if os.name == "posix":  # Windows only tracks the read-only attribute
                 mode = stat.S_IMODE(path.stat().st_mode)
@@ -218,9 +218,9 @@ class TestAddServer:
             for stale in tmp_path.glob("*.bak"):  # a later run: no same-second name clash
                 stale.chmod(stat.S_IREAD | stat.S_IWRITE)
                 stale.unlink()
-            newer = {"command": "/abs/uvx", "args": ["opengsc@0.3.0"]}
+            newer = {"command": "/abs/uvx", "args": ["easygsc@0.3.0"]}
             assert connect.add_server(path, "mcpServers", newer, lambda: True)[0] == "updated"
-            assert json.loads(path.read_text())["mcpServers"]["opengsc"] == newer
+            assert json.loads(path.read_text())["mcpServers"]["easygsc"] == newer
         finally:
             for leftover in tmp_path.iterdir():
                 leftover.chmod(stat.S_IREAD | stat.S_IWRITE)
@@ -254,12 +254,12 @@ class TestAddServer:
         connect.add_server(link, "mcpServers", ENTRY, never_asked)
 
         assert link.is_symlink()
-        assert json.loads(real.read_text()) == {"mcpServers": {"opengsc": ENTRY}}
+        assert json.loads(real.read_text()) == {"mcpServers": {"easygsc": ENTRY}}
 
 
 # Captured at import, before the autouse guard in conftest swaps APPS for ().
 REAL = {app.name: app for app in connect.APPS}
-COMMAND = ("/abs/uvx", ["opengsc@0.2.0"])
+COMMAND = ("/abs/uvx", ["easygsc@0.2.0"])
 
 
 def feed(*answers):
@@ -286,7 +286,7 @@ class TestMenu:
     ):
         first, first_path = json_app(tmp_path, "First", installed=True)
         second, second_path = json_app(tmp_path, "Second", installed=True)
-        old_entry = {"mcpServers": {"opengsc": {"command": "old"}}}
+        old_entry = {"mcpServers": {"easygsc": {"command": "old"}}}
         second_path.write_text(json.dumps(old_entry))
         monkeypatch.setattr(connect, "APPS", (first, second))
         monkeypatch.setattr("builtins.input", feed("", "q"))  # Enter = both apps, then quit
@@ -295,7 +295,7 @@ class TestMenu:
 
         out, err = capsys.readouterr()
         assert "connect cancelled" in err
-        assert json.loads(first_path.read_text())["mcpServers"]["opengsc"] == ENTRY
+        assert json.loads(first_path.read_text())["mcpServers"]["easygsc"] == ENTRY
         assert json.loads(second_path.read_text()) == old_entry  # never replaced
         summary = out[out.index("Already written before the cancel") :]
         assert "First" in summary
@@ -315,7 +315,7 @@ class TestMenu:
         assert "1. Found  (found on this computer)" in out
         assert "2. Missing\n" in out
         assert json.loads(found_path.read_text()) == {
-            "mcpServers": {"opengsc": {"command": "/abs/uvx", "args": ["opengsc@0.2.0"]}}
+            "mcpServers": {"easygsc": {"command": "/abs/uvx", "args": ["easygsc@0.2.0"]}}
         }
         assert not other_path.exists()
         assert "Connected." in out and "Next: Restart Found." in out
@@ -334,7 +334,7 @@ class TestMenu:
         monkeypatch.setattr("builtins.input", feed("0"))
         assert connect.choose_and_connect([found]) == 0
         assert not found_path.exists()
-        assert "opengsc connect" in capsys.readouterr().out
+        assert "easygsc connect" in capsys.readouterr().out
 
     def test_invalid_answers_ask_again(self, tmp_path, launch, monkeypatch, capsys):
         app, path = json_app(tmp_path, "App")
@@ -357,7 +357,7 @@ class TestMenu:
         snippet = out[out.index("{") : out.rindex("}") + 1]
         assert json.loads(snippet) == {
             "mcpServers": {
-                "opengsc": {"command": "/abs/uv", "args": ["run", "--directory", "/my dir", "x"]}
+                "easygsc": {"command": "/abs/uv", "args": ["run", "--directory", "/my dir", "x"]}
             }
         }
         assert "web browser" in out
@@ -385,7 +385,7 @@ class TestJsonApps:
         out = capsys.readouterr().out
         assert "Could not connect it automatically" in out
         assert f"Do it by hand: open {broken_path}" in out
-        assert '"opengsc": {' in out
+        assert '"easygsc": {' in out
         assert broken_path.read_text() == '{\n  // mine\n  "mcpServers": {}\n}'
         assert fine_path.is_file()
         assert "manual step" in out
@@ -413,16 +413,16 @@ class TestJsonApps:
         copies = [tmp_path / "a" / "c.json", tmp_path / "b" / "c.json"]
         for copy in copies:
             copy.parent.mkdir()
-            copy.write_text(json.dumps({"mcpServers": {"opengsc": {"command": "old"}}}))
+            copy.write_text(json.dumps({"mcpServers": {"easygsc": {"command": "old"}}}))
         app = connect.App("Desk", "Reopen it.", configs=lambda: copies)
         monkeypatch.setattr("builtins.input", feed("", "y"))
 
         assert connect.choose_and_connect([app]) == 0
 
         for copy in copies:
-            assert json.loads(copy.read_text())["mcpServers"]["opengsc"]["command"] == "/abs/uvx"
+            assert json.loads(copy.read_text())["mcpServers"]["easygsc"]["command"] == "/abs/uvx"
         out = capsys.readouterr().out
-        assert "replaced the old opengsc entry" in out
+        assert "replaced the old easygsc entry" in out
         assert out.count("Backup of the previous file") == 2
 
     def test_a_failing_copy_is_named_and_the_updated_one_is_reported(
@@ -446,7 +446,7 @@ class TestJsonApps:
         self, tmp_path, launch, monkeypatch, capsys
     ):
         app, path = json_app(tmp_path, "Desk", installed=True, close_first=True)
-        path.write_text(json.dumps({"mcpServers": {"opengsc": app.entry(*COMMAND)}}))
+        path.write_text(json.dumps({"mcpServers": {"easygsc": app.entry(*COMMAND)}}))
         monkeypatch.setattr("builtins.input", feed(""))  # the menu is the only prompt
 
         assert connect.choose_and_connect([app]) == 0
@@ -460,12 +460,12 @@ class TestJsonApps:
         assert REAL["VS Code (GitHub Copilot)"].entry(*COMMAND) == {
             "type": "stdio",
             "command": "/abs/uvx",
-            "args": ["opengsc@0.2.0"],
+            "args": ["easygsc@0.2.0"],
         }
         assert REAL["Cursor"].entry(*COMMAND)["type"] == "stdio"
         assert REAL["Claude Desktop"].entry(*COMMAND) == {
             "command": "/abs/uvx",
-            "args": ["opengsc@0.2.0"],
+            "args": ["easygsc@0.2.0"],
         }
 
 
@@ -530,8 +530,8 @@ class TestCliApps:
         assert connect.choose_and_connect([REAL["Claude Code"]]) == 0
 
         run.assert_called_once_with(
-            ["/bin/claude", "mcp", "add", "--scope", "user", "opengsc", "--"]
-            + ["/abs/uvx", "opengsc@0.2.0"]
+            ["/bin/claude", "mcp", "add", "--scope", "user", "easygsc", "--"]
+            + ["/abs/uvx", "easygsc@0.2.0"]
         )
         assert "Next: Start a new Claude Code session." in capsys.readouterr().out
 
@@ -542,7 +542,7 @@ class TestCliApps:
         on_path(monkeypatch, claude="/bin/claude")
         run = mock.Mock(
             side_effect=[
-                (1, "MCP server opengsc already exists in user config\n"),
+                (1, "MCP server easygsc already exists in user config\n"),
                 (0, ""),
                 (0, ""),
             ]
@@ -555,10 +555,10 @@ class TestCliApps:
         argvs = [c.args[0][1:3] for c in run.call_args_list]
         if answer == "n":
             assert argvs == [["mcp", "add"]]
-            assert "Kept your existing opengsc entry" in capsys.readouterr().out
+            assert "Kept your existing easygsc entry" in capsys.readouterr().out
         else:
             assert argvs == [["mcp", "add"], ["mcp", "remove"], ["mcp", "add"]]
-            assert "replaced the old opengsc entry" in capsys.readouterr().out
+            assert "replaced the old easygsc entry" in capsys.readouterr().out
 
     @pytest.mark.parametrize("answer", ["n", "y"])
     def test_codex_asks_before_overwriting_its_entry(self, launch, monkeypatch, answer):
@@ -578,18 +578,18 @@ class TestCliApps:
         assert connect.choose_and_connect([REAL["Codex (OpenAI)"]]) == 0
 
         calls = [c.args[0] for c in run.call_args_list]
-        assert calls[0] == ["/bin/codex", "mcp", "get", "opengsc"]
-        assert "already has an opengsc entry" in prompts[1]
+        assert calls[0] == ["/bin/codex", "mcp", "get", "easygsc"]
+        assert "already has an easygsc entry" in prompts[1]
         if answer == "n":
             assert calls == calls[:1]
         else:
             assert calls[1:] == [
-                ["/bin/codex", "mcp", "add", "opengsc", "--", "/abs/uvx", "opengsc@0.2.0"]
+                ["/bin/codex", "mcp", "add", "easygsc", "--", "/abs/uvx", "easygsc@0.2.0"]
             ]
 
     def test_codex_adds_without_asking_when_it_has_no_entry(self, launch, monkeypatch):
         on_path(monkeypatch, codex="/bin/codex")
-        run = mock.Mock(side_effect=[(1, "Error: No MCP server named 'opengsc' found."), (0, "")])
+        run = mock.Mock(side_effect=[(1, "Error: No MCP server named 'easygsc' found."), (0, "")])
         monkeypatch.setattr(connect, "_run", run)
         monkeypatch.setattr("builtins.input", feed(""))
         assert connect.choose_and_connect([REAL["Codex (OpenAI)"]]) == 0
@@ -602,20 +602,20 @@ class TestCliApps:
         monkeypatch.setattr(
             connect,
             "_run",
-            mock.Mock(side_effect=[(1, "MCP server opengsc already exists"), (0, ""), (1, "boom")]),
+            mock.Mock(side_effect=[(1, "MCP server easygsc already exists"), (0, ""), (1, "boom")]),
         )
         monkeypatch.setattr("builtins.input", feed("", "y"))
         assert connect.choose_and_connect([REAL["Claude Code"]]) == 1
         out = capsys.readouterr().out
         assert "old entry was already removed" in out
-        assert "claude mcp add --scope user opengsc -- /abs/uvx opengsc@0.2.0" in out
+        assert "claude mcp add --scope user easygsc -- /abs/uvx easygsc@0.2.0" in out
 
     def test_a_missing_cli_prints_the_command_to_run(self, launch, monkeypatch, capsys):
         monkeypatch.setattr("builtins.input", feed("1"))
         assert connect.choose_and_connect([REAL["Claude Code"]]) == 1
         out = capsys.readouterr().out
         assert "the 'claude' command was not found" in out
-        assert "claude mcp add --scope user opengsc -- /abs/uvx opengsc@0.2.0" in out
+        assert "claude mcp add --scope user easygsc -- /abs/uvx easygsc@0.2.0" in out
 
     def test_a_failing_cli_reports_its_last_line(self, launch, monkeypatch, capsys):
         on_path(monkeypatch, codex="/bin/codex")

@@ -1,11 +1,11 @@
 """Credential resolution, the OAuth flow, and token storage.
 
-Resolution order (documented in README, printed by ``opengsc doctor``):
-1. service account file (``OPENGSC_SERVICE_ACCOUNT_FILE``)
-2. refresh token from the environment (``OPENGSC_REFRESH_TOKEN`` plus the
+Resolution order (documented in README, printed by ``easygsc doctor``):
+1. service account file (``EASYGSC_SERVICE_ACCOUNT_FILE``)
+2. refresh token from the environment (``EASYGSC_REFRESH_TOKEN`` plus the
    OAuth client from env vars or ``client_secret.json``), for stateless setups
-3. saved OAuth token (``~/.config/opengsc/token.json``)
-4. otherwise run ``opengsc auth``
+3. saved OAuth token (``~/.config/easygsc/token.json``)
+4. otherwise run ``easygsc auth``
 
 Nothing here logs or returns secrets; the refresh token is printed exactly
 once, by ``run_oauth_flow``, because the user asked for it.
@@ -28,7 +28,7 @@ from .allowlist import GuardedSession, attach_guard
 SCOPES = ["https://www.googleapis.com/auth/webmasters.readonly"]
 
 # Same location on every OS, per the project spec.
-CONFIG_DIR = Path.home() / ".config" / "opengsc"
+CONFIG_DIR = Path.home() / ".config" / "easygsc"
 TOKEN_PATH = CONFIG_DIR / "token.json"
 CLIENT_SECRET_PATH = CONFIG_DIR / "client_secret.json"
 
@@ -42,8 +42,8 @@ class AuthError(RuntimeError):
 
 def client_config() -> dict:
     """Build the 'installed' client config from env vars or client_secret.json."""
-    client_id = os.environ.get("OPENGSC_CLIENT_ID")
-    client_secret = os.environ.get("OPENGSC_CLIENT_SECRET")
+    client_id = os.environ.get("EASYGSC_CLIENT_ID")
+    client_secret = os.environ.get("EASYGSC_CLIENT_SECRET")
     if client_id and client_secret:
         return {
             "installed": {
@@ -58,19 +58,19 @@ def client_config() -> dict:
         with open(CLIENT_SECRET_PATH, encoding="utf-8") as f:
             return json.load(f)
     raise AuthError(
-        "No OAuth client configured. Provide OPENGSC_CLIENT_ID and "
-        "OPENGSC_CLIENT_SECRET, or place a Desktop-app client_secret.json at "
-        f"{CLIENT_SECRET_PATH}, then run 'opengsc auth'."
+        "No OAuth client configured. Provide EASYGSC_CLIENT_ID and "
+        "EASYGSC_CLIENT_SECRET, or place a Desktop-app client_secret.json at "
+        f"{CLIENT_SECRET_PATH}, then run 'easygsc auth'."
     )
 
 
 def resolve_credentials():
     """Resolve credentials in the documented order. Raises AuthError if none."""
-    sa_file = os.environ.get("OPENGSC_SERVICE_ACCOUNT_FILE")
+    sa_file = os.environ.get("EASYGSC_SERVICE_ACCOUNT_FILE")
     if sa_file:
         creds = service_account.Credentials.from_service_account_file(sa_file, scopes=SCOPES)
         return creds
-    refresh_token = os.environ.get("OPENGSC_REFRESH_TOKEN")
+    refresh_token = os.environ.get("EASYGSC_REFRESH_TOKEN")
     if refresh_token:
         client = next(iter(client_config().values()))
         return oauth2_credentials.Credentials(
@@ -86,8 +86,8 @@ def resolve_credentials():
             str(TOKEN_PATH), scopes=SCOPES
         )
     raise AuthError(
-        "No credentials found. Run 'opengsc auth' first, or set "
-        "OPENGSC_SERVICE_ACCOUNT_FILE for service-account setups. "
+        "No credentials found. Run 'easygsc auth' first, or set "
+        "EASYGSC_SERVICE_ACCOUNT_FILE for service-account setups. "
         f"Expected token at {TOKEN_PATH}."
     )
 
@@ -140,7 +140,7 @@ def run_oauth_flow(no_browser: bool = False, *, print_refresh_token: bool = True
     ``--no-browser`` still uses the loopback redirect flow; it only skips
     opening the browser window automatically (the URL is printed instead).
     ``print_refresh_token=False`` keeps the token out of stdout for callers
-    such as ``opengsc setup``; ``opengsc auth`` keeps the default.
+    such as ``easygsc setup``; ``easygsc auth`` keeps the default.
     """
     flow = InstalledAppFlow.from_client_config(client_config(), scopes=SCOPES)
     # The code exchange goes through the flow's own OAuth2Session: guard it.
@@ -150,7 +150,7 @@ def run_oauth_flow(no_browser: bool = False, *, print_refresh_token: bool = True
     # The user explicitly asked for the refresh token (stateless setups);
     # this is the only place it is ever printed.
     if print_refresh_token:
-        print(f"OPENGSC_REFRESH_TOKEN={credentials.refresh_token}")
+        print(f"EASYGSC_REFRESH_TOKEN={credentials.refresh_token}")
     return credentials
 
 

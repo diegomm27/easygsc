@@ -7,7 +7,7 @@ from unittest import mock
 import pytest
 import requests
 
-from opengsc import api
+from easygsc import api
 
 
 class FakeResponse:
@@ -128,7 +128,7 @@ class TestErrorMapping:
         session.response = self.google_error(401, "invalid_grant", "Token has been expired")
         with pytest.raises(api.ApiError) as excinfo:
             api.list_sites()
-        assert "opengsc auth" in excinfo.value.hint
+        assert "easygsc auth" in excinfo.value.hint
 
     def test_429_rate_limit_hint_covers_both_reasons(self, session):
         for reason in ("rateLimitExceeded", "quotaExceeded", None):

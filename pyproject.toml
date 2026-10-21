@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "opengsc"
+name = "easygsc"
 version = "0.2.0"
 description = "Minimal, transparent, read-only MCP server for Google Search Console."
 readme = "README.md"
@@ -11,7 +11,7 @@ license = "MIT"
 requires-python = ">=3.10"
 keywords = ["mcp", "google-search-console", "seo", "claude"]
 # Application, not library: runtime deps are pinned exactly because `uvx
-# opengsc@x.y.z` resolves from these ranges, not from uv.lock.
+# easygsc@x.y.z` resolves from these ranges, not from uv.lock.
 # Transitive dependencies are intentionally not pinned.
 dependencies = [
     "mcp==1.30.0",
@@ -20,10 +20,10 @@ dependencies = [
 ]
 
 [project.scripts]
-opengsc = "opengsc.cli:main"
+easygsc = "easygsc.cli:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/opengsc"]
+packages = ["src/easygsc"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

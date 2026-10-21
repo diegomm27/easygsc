@@ -1,7 +1,7 @@
 """Tests for credential resolution, the OAuth flow, and token storage.
 
 No network: the flow and all HTTP are mocked. Config paths are redirected
-into a temporary directory via monkeypatching opengsc.auth module constants.
+into a temporary directory via monkeypatching easygsc.auth module constants.
 """
 
 import json
@@ -14,8 +14,8 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from google.oauth2 import service_account as ga_service_account
 
-from opengsc import auth
-from opengsc.allowlist import GuardedSessionMixin
+from easygsc import auth
+from easygsc.allowlist import GuardedSessionMixin
 
 
 # A throwaway RSA key so service-account loading runs for real (no network).
@@ -31,7 +31,7 @@ def _make_pem() -> str:
 
 @pytest.fixture
 def config_dir(tmp_path, monkeypatch):
-    d = tmp_path / "opengsc-config"
+    d = tmp_path / "easygsc-config"
     d.mkdir()
     monkeypatch.setattr(auth, "CONFIG_DIR", d)
     monkeypatch.setattr(auth, "TOKEN_PATH", d / "token.json")
@@ -56,12 +56,12 @@ class TestResolutionOrder:
         sa_path = config_dir / "sa.json"
         sa_path.write_text(json.dumps(SA_FILE))
         (config_dir / "token.json").write_text(json.dumps({"refresh_token": "r"}))
-        monkeypatch.setenv("OPENGSC_SERVICE_ACCOUNT_FILE", str(sa_path))
+        monkeypatch.setenv("EASYGSC_SERVICE_ACCOUNT_FILE", str(sa_path))
         creds = auth.resolve_credentials()
         assert isinstance(creds, ga_service_account.Credentials)
 
     def test_token_json_next(self, config_dir, monkeypatch):
-        monkeypatch.delenv("OPENGSC_SERVICE_ACCOUNT_FILE", raising=False)
+        monkeypatch.delenv("EASYGSC_SERVICE_ACCOUNT_FILE", raising=False)
         token = {
             "refresh_token": "r",
             "client_id": "cid",
@@ -75,56 +75,56 @@ class TestResolutionOrder:
         assert creds.refresh_token == "r"
 
     def test_nothing_resolvable_raises_with_hint(self, config_dir, monkeypatch):
-        monkeypatch.delenv("OPENGSC_SERVICE_ACCOUNT_FILE", raising=False)
-        with pytest.raises(auth.AuthError, match="opengsc auth"):
+        monkeypatch.delenv("EASYGSC_SERVICE_ACCOUNT_FILE", raising=False)
+        with pytest.raises(auth.AuthError, match="easygsc auth"):
             auth.resolve_credentials()
 
     def test_service_account_scoped_readonly(self, config_dir, monkeypatch):
         sa_path = config_dir / "sa.json"
         sa_path.write_text(json.dumps(SA_FILE))
-        monkeypatch.setenv("OPENGSC_SERVICE_ACCOUNT_FILE", str(sa_path))
+        monkeypatch.setenv("EASYGSC_SERVICE_ACCOUNT_FILE", str(sa_path))
         creds = auth.resolve_credentials()
         assert creds.scopes == [auth.SCOPES[0]]
 
     def test_refresh_token_env_beats_token_json(self, config_dir, monkeypatch):
-        monkeypatch.delenv("OPENGSC_SERVICE_ACCOUNT_FILE", raising=False)
+        monkeypatch.delenv("EASYGSC_SERVICE_ACCOUNT_FILE", raising=False)
         (config_dir / "token.json").write_text(json.dumps({"refresh_token": "from-file"}))
-        monkeypatch.setenv("OPENGSC_REFRESH_TOKEN", "from-env")
-        monkeypatch.setenv("OPENGSC_CLIENT_ID", "cid")
-        monkeypatch.setenv("OPENGSC_CLIENT_SECRET", "sek")
+        monkeypatch.setenv("EASYGSC_REFRESH_TOKEN", "from-env")
+        monkeypatch.setenv("EASYGSC_CLIENT_ID", "cid")
+        monkeypatch.setenv("EASYGSC_CLIENT_SECRET", "sek")
         creds = auth.resolve_credentials()
         assert creds.refresh_token == "from-env"
         assert creds.client_id == "cid"
         assert creds.scopes == [auth.SCOPES[0]]
 
     def test_refresh_token_env_without_client_raises_with_hint(self, config_dir, monkeypatch):
-        monkeypatch.delenv("OPENGSC_SERVICE_ACCOUNT_FILE", raising=False)
-        monkeypatch.delenv("OPENGSC_CLIENT_ID", raising=False)
-        monkeypatch.delenv("OPENGSC_CLIENT_SECRET", raising=False)
-        monkeypatch.setenv("OPENGSC_REFRESH_TOKEN", "from-env")
-        with pytest.raises(auth.AuthError, match="OPENGSC_CLIENT_ID"):
+        monkeypatch.delenv("EASYGSC_SERVICE_ACCOUNT_FILE", raising=False)
+        monkeypatch.delenv("EASYGSC_CLIENT_ID", raising=False)
+        monkeypatch.delenv("EASYGSC_CLIENT_SECRET", raising=False)
+        monkeypatch.setenv("EASYGSC_REFRESH_TOKEN", "from-env")
+        with pytest.raises(auth.AuthError, match="EASYGSC_CLIENT_ID"):
             auth.resolve_credentials()
 
     def test_service_account_beats_refresh_token_env(self, config_dir, monkeypatch):
         sa_path = config_dir / "sa.json"
         sa_path.write_text(json.dumps(SA_FILE))
-        monkeypatch.setenv("OPENGSC_SERVICE_ACCOUNT_FILE", str(sa_path))
-        monkeypatch.setenv("OPENGSC_REFRESH_TOKEN", "from-env")
+        monkeypatch.setenv("EASYGSC_SERVICE_ACCOUNT_FILE", str(sa_path))
+        monkeypatch.setenv("EASYGSC_REFRESH_TOKEN", "from-env")
         creds = auth.resolve_credentials()
         assert isinstance(creds, ga_service_account.Credentials)
 
 
 class TestClientConfig:
     def test_env_vars_build_client_config(self, config_dir, monkeypatch):
-        monkeypatch.setenv("OPENGSC_CLIENT_ID", "cid")
-        monkeypatch.setenv("OPENGSC_CLIENT_SECRET", "sek")
+        monkeypatch.setenv("EASYGSC_CLIENT_ID", "cid")
+        monkeypatch.setenv("EASYGSC_CLIENT_SECRET", "sek")
         cfg = auth.client_config()
         assert cfg["installed"]["client_id"] == "cid"
         assert cfg["installed"]["client_secret"] == "sek"
 
     def test_client_secret_file_used_when_no_env(self, config_dir, monkeypatch):
-        monkeypatch.delenv("OPENGSC_CLIENT_ID", raising=False)
-        monkeypatch.delenv("OPENGSC_CLIENT_SECRET", raising=False)
+        monkeypatch.delenv("EASYGSC_CLIENT_ID", raising=False)
+        monkeypatch.delenv("EASYGSC_CLIENT_SECRET", raising=False)
         (config_dir / "client_secret.json").write_text(
             json.dumps({"installed": {"client_id": "file-cid", "client_secret": "file-sek"}})
         )
@@ -132,16 +132,16 @@ class TestClientConfig:
         assert cfg["installed"]["client_id"] == "file-cid"
 
     def test_env_vars_win_over_file(self, config_dir, monkeypatch):
-        monkeypatch.setenv("OPENGSC_CLIENT_ID", "env-cid")
-        monkeypatch.setenv("OPENGSC_CLIENT_SECRET", "env-sek")
+        monkeypatch.setenv("EASYGSC_CLIENT_ID", "env-cid")
+        monkeypatch.setenv("EASYGSC_CLIENT_SECRET", "env-sek")
         (config_dir / "client_secret.json").write_text(
             json.dumps({"installed": {"client_id": "file-cid", "client_secret": "file-sek"}})
         )
         assert auth.client_config()["installed"]["client_id"] == "env-cid"
 
     def test_no_client_config_raises_with_hint(self, config_dir, monkeypatch):
-        monkeypatch.delenv("OPENGSC_CLIENT_ID", raising=False)
-        monkeypatch.delenv("OPENGSC_CLIENT_SECRET", raising=False)
+        monkeypatch.delenv("EASYGSC_CLIENT_ID", raising=False)
+        monkeypatch.delenv("EASYGSC_CLIENT_SECRET", raising=False)
         with pytest.raises(auth.AuthError, match="client_secret.json"):
             auth.client_config()
 
@@ -205,8 +205,8 @@ class TestOAuthFlow:
         self, config_dir, monkeypatch, capsys
     ):
         flow, creds = self.fake_flow()
-        monkeypatch.setenv("OPENGSC_CLIENT_ID", "cid")
-        monkeypatch.setenv("OPENGSC_CLIENT_SECRET", "sek")
+        monkeypatch.setenv("EASYGSC_CLIENT_ID", "cid")
+        monkeypatch.setenv("EASYGSC_CLIENT_SECRET", "sek")
         with mock.patch.object(auth, "InstalledAppFlow") as flow_cls:
             flow_cls.from_client_config.return_value = flow
             returned = auth.run_oauth_flow(no_browser=True)
@@ -215,23 +215,23 @@ class TestOAuthFlow:
         assert flow.run_local_server.call_args.kwargs.get("open_browser") is False
         assert json.loads(auth.TOKEN_PATH.read_text())["refresh_token"] == "r-123"
         out = capsys.readouterr().out
-        assert "OPENGSC_REFRESH_TOKEN=r-123" in out
+        assert "EASYGSC_REFRESH_TOKEN=r-123" in out
 
     def test_run_oauth_flow_can_suppress_the_refresh_token_print(
         self, config_dir, monkeypatch, capsys
     ):
         flow, _ = self.fake_flow()
-        monkeypatch.setenv("OPENGSC_CLIENT_ID", "cid")
-        monkeypatch.setenv("OPENGSC_CLIENT_SECRET", "sek")
+        monkeypatch.setenv("EASYGSC_CLIENT_ID", "cid")
+        monkeypatch.setenv("EASYGSC_CLIENT_SECRET", "sek")
         with mock.patch.object(auth, "InstalledAppFlow") as flow_cls:
             flow_cls.from_client_config.return_value = flow
             auth.run_oauth_flow(no_browser=True, print_refresh_token=False)
-        assert "OPENGSC_REFRESH_TOKEN" not in capsys.readouterr().out
+        assert "EASYGSC_REFRESH_TOKEN" not in capsys.readouterr().out
 
     def test_run_oauth_flow_guards_the_flow_session(self, config_dir, monkeypatch):
         flow, _ = self.fake_flow()
-        monkeypatch.setenv("OPENGSC_CLIENT_ID", "cid")
-        monkeypatch.setenv("OPENGSC_CLIENT_SECRET", "sek")
+        monkeypatch.setenv("EASYGSC_CLIENT_ID", "cid")
+        monkeypatch.setenv("EASYGSC_CLIENT_SECRET", "sek")
         with mock.patch.object(auth, "InstalledAppFlow") as flow_cls:
             flow_cls.from_client_config.return_value = flow
             auth.run_oauth_flow(no_browser=True)
@@ -244,8 +244,8 @@ class TestOAuthFlow:
         """--no-browser still uses the loopback redirect: it only skips
         opening a browser window."""
         flow, _ = self.fake_flow()
-        monkeypatch.setenv("OPENGSC_CLIENT_ID", "cid")
-        monkeypatch.setenv("OPENGSC_CLIENT_SECRET", "sek")
+        monkeypatch.setenv("EASYGSC_CLIENT_ID", "cid")
+        monkeypatch.setenv("EASYGSC_CLIENT_SECRET", "sek")
         with mock.patch.object(auth, "InstalledAppFlow") as flow_cls:
             flow_cls.from_client_config.return_value = flow
             auth.run_oauth_flow(no_browser=True)

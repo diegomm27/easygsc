@@ -1,6 +1,6 @@
 {
-  "name": "opengsc",
-  "displayName": "OpenGSC",
+  "name": "easygsc",
+  "displayName": "EasyGSC",
   "version": "0.2.0",
   "description": "Read-only Google Search Console data for Claude: properties, search analytics, sitemaps, URL inspection.",
   "author": {
@@ -8,7 +8,7 @@
   },
   "license": "MIT",
   "keywords": ["mcp", "google-search-console", "seo", "search-analytics"],
-  "homepage": "https://github.com/diegomm27/opengsc",
-  "repository": "https://github.com/diegomm27/opengsc",
-  "documentationUrl": "https://github.com/diegomm27/opengsc#readme"
+  "homepage": "https://github.com/diegomm27/easygsc",
+  "repository": "https://github.com/diegomm27/easygsc",
+  "documentationUrl": "https://github.com/diegomm27/easygsc#readme"
 }

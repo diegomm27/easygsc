@@ -1,4 +1,4 @@
-"""Connect opengsc to AI apps: build the launch command and register it in each app.
+"""Connect easygsc to AI apps: build the launch command and register it in each app.
 
 Editing an app's config never loses data: only plain JSON is edited, a timestamped
 backup is written first, the file is replaced atomically and every other entry is
@@ -27,16 +27,16 @@ from urllib.request import url2pathname
 from . import __version__
 from .prompts import Cancelled, ask, confirm
 
-SERVER_NAME = "opengsc"
+SERVER_NAME = "easygsc"
 TRY_IT = 'Open your AI app and ask: "List my Search Console sites."'
 BROWSER_ONLY = (
     "Chats that only run in a web browser (ChatGPT, claude.ai, Gemini on the web) cannot\n"
-    "start programs on your computer, so they cannot use opengsc. Use a desktop app above."
+    "start programs on your computer, so they cannot use easygsc. Use a desktop app above."
 )
 
 
 class ConnectError(Exception):
-    """An app config opengsc could not edit; the message is user-facing.
+    """An app config easygsc could not edit; the message is user-facing.
 
     ``path`` names the file that failed; ``notes`` report files already updated.
     """
@@ -48,7 +48,7 @@ class ConnectError(Exception):
 
 
 def _direct_url() -> dict | None:
-    """Where this opengsc was installed from (PEP 610), or None for an index release."""
+    """Where this easygsc was installed from (PEP 610), or None for an index release."""
     try:
         text = metadata.distribution(SERVER_NAME).read_text("direct_url.json")
         return json.loads(text) if text else None
@@ -67,7 +67,7 @@ def _file_url_path(url: str) -> str:
 
 
 def launch_command() -> tuple[str, list[str]]:
-    """How an AI app should start this exact opengsc, even before it is on PyPI."""
+    """How an AI app should start this exact easygsc, even before it is on PyPI."""
     origin = _direct_url() or {}
     url = origin.get("url", "")
     vcs = origin.get("vcs_info") or {}
@@ -122,10 +122,10 @@ def _write_atomic(path: Path, text: str) -> None:
 def add_server(
     path: Path, section: str, entry: dict, replace: Callable[[], bool]
 ) -> tuple[str, Path | None]:
-    """Register ``entry`` as ``<section>.opengsc`` in the JSON config at ``path``.
+    """Register ``entry`` as ``<section>.easygsc`` in the JSON config at ``path``.
 
     Returns ``(status, backup)``. Status is ``added``, ``updated``, ``unchanged``, or
-    ``kept`` when ``replace()`` declined overwriting a different opengsc entry. Raises
+    ``kept`` when ``replace()`` declined overwriting a different easygsc entry. Raises
     ConnectError, leaving the file untouched, for anything but a plain JSON object.
     """
     if path.is_symlink():
@@ -137,22 +137,22 @@ def add_server(
         raise ConnectError(f"Cannot read {path}: {exc}", path) from exc
     except UnicodeDecodeError:
         raise ConnectError(
-            f"{path} is not UTF-8 text, so opengsc left it untouched.", path
+            f"{path} is not UTF-8 text, so easygsc left it untouched.", path
         ) from None
     try:
         data = json.loads(raw) if raw.strip() else {}
     except json.JSONDecodeError:
         raise ConnectError(
-            f"{path} is not plain JSON (comments or a typo?), so opengsc left it untouched.", path
+            f"{path} is not plain JSON (comments or a typo?), so easygsc left it untouched.", path
         ) from None
     if not isinstance(data, dict):
         raise ConnectError(
-            f"{path} does not hold a JSON object, so opengsc left it untouched.", path
+            f"{path} does not hold a JSON object, so easygsc left it untouched.", path
         )
     servers = data.setdefault(section, {})
     if not isinstance(servers, dict):
         raise ConnectError(
-            f"'{section}' in {path} is not a JSON object, so opengsc left it untouched.", path
+            f"'{section}' in {path} is not a JSON object, so easygsc left it untouched.", path
         )
 
     current = servers.get(SERVER_NAME)
@@ -179,14 +179,14 @@ def _has_entry(path: Path, section: str, entry: dict) -> bool:
 
 @dataclass(frozen=True)
 class App:
-    """An AI app opengsc can register itself in.
+    """An AI app easygsc can register itself in.
 
     A JSON app lists its candidate config files, the default one first. A CLI app is
     registered through its own command (``<cli> mcp add``), which owns its config.
     """
 
     name: str
-    then: str  # what the user does next so the app loads opengsc
+    then: str  # what the user does next so the app loads easygsc
     configs: Callable[[], list[Path]] | None = None
     section: str = "mcpServers"
     stdio_type: bool = False  # the entry needs "type": "stdio"
@@ -194,7 +194,7 @@ class App:
     cli: str | None = None
     add: Callable[[str, list[str]], list[str]] | None = None  # argv after the cli
     remove: tuple[str, ...] = ()  # argv after the cli; used when add refuses a duplicate
-    exists: tuple[str, ...] = ()  # argv that exits 0 when opengsc is registered
+    exists: tuple[str, ...] = ()  # argv that exits 0 when easygsc is registered
     detect: tuple[str, ...] = ()  # executables that show the app is installed
     found_by_folder: bool = True  # an existing config folder means it is installed
 
@@ -335,9 +335,9 @@ APPS: tuple[App, ...] = (
 
 STATUS = {
     "added": "Connected.",
-    "updated": "Connected (replaced the old opengsc entry).",
+    "updated": "Connected (replaced the old easygsc entry).",
     "unchanged": "Already connected; nothing changed.",
-    "kept": "Kept your existing opengsc entry; nothing changed.",
+    "kept": "Kept your existing easygsc entry; nothing changed.",
 }
 
 
@@ -383,7 +383,7 @@ def _connect_cli(app: App, command: str, args: list[str]) -> tuple[str, list[str
     exe = shutil.which(app.cli)
     if not exe:
         raise ConnectError(f"the '{app.cli}' command was not found. Is {app.name} installed?")
-    replace = _ask_replace(app, "already has an opengsc entry. Replace it with this one?")
+    replace = _ask_replace(app, "already has an easygsc entry. Replace it with this one?")
     status = "added"
     if app.exists and _run([exe, *app.exists])[0] == 0:
         if not replace():
@@ -414,7 +414,7 @@ def _connect_json(app: App, command: str, args: list[str]) -> tuple[str, list[st
     if app.close_first and app.found() and not connected:
         print(f"  Quit {app.name} completely (also from the system tray or menu bar).")
         ask("  Press Enter once it is closed... ")
-    replace = _ask_replace(app, "already starts opengsc differently. Replace that?")
+    replace = _ask_replace(app, "already starts easygsc differently. Replace that?")
     statuses, notes = [], []
     for path in targets:
         try:
@@ -497,7 +497,7 @@ def _print_already_written(done: Sequence[tuple[App, str, list[str]]]) -> None:
 def _choose(apps: Sequence[App]) -> list[int]:
     found = [number for number, app in enumerate(apps, 1) if app.found()]
     other = len(apps) + 1
-    print("\nConnect opengsc to your AI apps")
+    print("\nConnect easygsc to your AI apps")
     for number, app in enumerate(apps, 1):
         print(f"  {number}. {app.name}{'  (found on this computer)' if number in found else ''}")
     print(f"  {other}. Another app: show the settings to copy")
@@ -529,7 +529,7 @@ def choose_and_connect(apps: Sequence[App] | None = None) -> int:
     command, args = launch_command()
     picks = _choose(apps)
     if not picks:
-        print("No apps connected. Run 'opengsc connect' any time to add one.")
+        print("No apps connected. Run 'easygsc connect' any time to add one.")
         return 0
     failed = False
     done: list[tuple[App, str, list[str]]] = []
@@ -554,9 +554,9 @@ def choose_and_connect(apps: Sequence[App] | None = None) -> int:
 
 
 def run() -> int:
-    """``opengsc connect``: 0 success, 1 an app needs a manual step, 2 cancelled."""
+    """``easygsc connect``: 0 success, 1 an app needs a manual step, 2 cancelled."""
     try:
         return choose_and_connect()
     except Cancelled:
-        print("connect cancelled; run 'opengsc connect' again when ready.", file=sys.stderr)
+        print("connect cancelled; run 'easygsc connect' again when ready.", file=sys.stderr)
         return 2

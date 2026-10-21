@@ -1,6 +1,6 @@
-"""CLI: ``opengsc``/``opengsc serve`` runs MCP over stdio; ``auth`` runs the
+"""CLI: ``easygsc``/``easygsc serve`` runs MCP over stdio; ``auth`` runs the
 OAuth flow; ``doctor`` reports auth state and exits 1 when auth fails; ``setup``
-runs the guided wizard; ``connect`` adds opengsc to the user's AI apps. Logs go to
+runs the guided wizard; ``connect`` adds easygsc to the user's AI apps. Logs go to
 stderr (WARNING by default); secrets are never printed; doctor output goes to stdout.
 """
 
@@ -25,9 +25,9 @@ def _setup_logging() -> None:
 def _auth_mode() -> str:
     import os
 
-    if os.environ.get("OPENGSC_SERVICE_ACCOUNT_FILE"):
+    if os.environ.get("EASYGSC_SERVICE_ACCOUNT_FILE"):
         return "service-account"
-    if os.environ.get("OPENGSC_REFRESH_TOKEN"):
+    if os.environ.get("EASYGSC_REFRESH_TOKEN"):
         return "oauth-env"
     if auth.TOKEN_PATH.is_file():
         return "oauth-token"
@@ -37,7 +37,7 @@ def _auth_mode() -> str:
 def _doctor() -> int:
     mode = _auth_mode()
     lines = [
-        f"opengsc version: {__version__}",
+        f"easygsc version: {__version__}",
         f"auth mode: {mode}",
         f"config dir: {auth.CONFIG_DIR}",
         f"token file: {auth.TOKEN_PATH}",
@@ -48,7 +48,7 @@ def _doctor() -> int:
         lines.append(f"token expiry: {info.get('expiry', 'unknown')}")
         lines.append(f"token has refresh_token: {info.get('has_refresh_token', False)}")
     elif mode == "oauth-env":
-        lines.append("token expiry: n/a (refresh token from OPENGSC_REFRESH_TOKEN)")
+        lines.append("token expiry: n/a (refresh token from EASYGSC_REFRESH_TOKEN)")
     elif mode == "service-account":
         lines.append("token expiry: n/a (service account keys do not expire)")
     else:
@@ -57,7 +57,7 @@ def _doctor() -> int:
     if mode == "none":
         lines += [
             "readable properties: unknown (not authenticated)",
-            "auth check: FAILED - run 'opengsc auth' or set OPENGSC_SERVICE_ACCOUNT_FILE",
+            "auth check: FAILED - run 'easygsc auth' or set EASYGSC_SERVICE_ACCOUNT_FILE",
         ]
         print("\n".join(lines))
         return 1
@@ -76,7 +76,7 @@ def _doctor() -> int:
 def main(argv: list[str] | None = None) -> int:
     _setup_logging()
     parser = argparse.ArgumentParser(
-        prog="opengsc",
+        prog="easygsc",
         description=(
             "Minimal, transparent, read-only MCP server for Google Search "
             "Console. With no arguments, serves MCP over stdio."
@@ -104,18 +104,18 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     sub.add_parser(
-        "connect", help="add opengsc to your AI apps (Claude, Cursor, VS Code, and more)"
+        "connect", help="add easygsc to your AI apps (Claude, Cursor, VS Code, and more)"
     )
 
     args = parser.parse_args(argv)
 
     if args.command == "connect":
         if _auth_mode() == "none":
-            print("Note: you are not logged in yet. Run 'opengsc setup' first.")
+            print("Note: you are not logged in yet. Run 'easygsc setup' first.")
         try:
             return connect.run()
         except KeyboardInterrupt:
-            print("\nconnect interrupted: run 'opengsc connect' again.", file=sys.stderr)
+            print("\nconnect interrupted: run 'easygsc connect' again.", file=sys.stderr)
             return 130
 
     if args.command == "setup":
@@ -124,7 +124,7 @@ def main(argv: list[str] | None = None) -> int:
         try:
             return setup.run(no_browser=args.no_browser)
         except KeyboardInterrupt:
-            print("\nsetup interrupted: run 'opengsc setup' again when ready.", file=sys.stderr)
+            print("\nsetup interrupted: run 'easygsc setup' again when ready.", file=sys.stderr)
             return 130
     if args.command == "auth":
         try:

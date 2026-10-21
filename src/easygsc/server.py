@@ -18,7 +18,7 @@ from mcp.server.fastmcp import FastMCP
 from . import api
 from .api import ApiError
 
-mcp = FastMCP("opengsc")
+mcp = FastMCP("easygsc")
 
 VALID_DIMENSIONS = ("query", "page", "country", "device", "date", "searchAppearance")
 VALID_OPERATORS = (

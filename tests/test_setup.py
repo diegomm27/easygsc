@@ -7,7 +7,7 @@ from unittest import mock
 
 import pytest
 
-from opengsc import api, cli, setup
+from easygsc import api, cli, setup
 
 SECRET = "SECRET-XYZ-123"
 REFRESH = "1//REFRESH-SECRET"
@@ -15,17 +15,17 @@ REFRESH = "1//REFRESH-SECRET"
 
 @pytest.fixture
 def config_dir(tmp_path, monkeypatch):
-    from opengsc import auth
+    from easygsc import auth
 
-    d = tmp_path / "opengsc-config"
+    d = tmp_path / "easygsc-config"
     monkeypatch.setattr(auth, "CONFIG_DIR", d)
     monkeypatch.setattr(auth, "TOKEN_PATH", d / "token.json")
     monkeypatch.setattr(auth, "CLIENT_SECRET_PATH", d / "client_secret.json")
     for var in (
-        "OPENGSC_CLIENT_ID",
-        "OPENGSC_CLIENT_SECRET",
-        "OPENGSC_SERVICE_ACCOUNT_FILE",
-        "OPENGSC_REFRESH_TOKEN",
+        "EASYGSC_CLIENT_ID",
+        "EASYGSC_CLIENT_SECRET",
+        "EASYGSC_SERVICE_ACCOUNT_FILE",
+        "EASYGSC_REFRESH_TOKEN",
     ):
         monkeypatch.delenv(var, raising=False)
     return d
@@ -287,7 +287,7 @@ class TestShortCircuit:
         assert setup.run() == 0
         out = capsys.readouterr().out
         assert "Everything is ready" in out
-        assert "Connect opengsc to your AI apps" in out
+        assert "Connect easygsc to your AI apps" in out
         assert "console.cloud.google.com" not in out
         assert SECRET not in out
         run_flow.assert_not_called()
@@ -312,15 +312,15 @@ class TestShortCircuit:
         opener.assert_not_called()
 
     def test_env_client_is_reported(self, config_dir, downloads, monkeypatch, capsys):
-        monkeypatch.setenv("OPENGSC_CLIENT_ID", "env-id")
-        monkeypatch.setenv("OPENGSC_CLIENT_SECRET", "env-secret")
+        monkeypatch.setenv("EASYGSC_CLIENT_ID", "env-id")
+        monkeypatch.setenv("EASYGSC_CLIENT_SECRET", "env-secret")
         doctor_ok(monkeypatch)
         monkeypatch.setattr(setup.auth, "run_oauth_flow", fake_auth(config_dir))
         monkeypatch.setattr("builtins.input", feed("", ""))
 
         assert setup.run(no_browser=True) == 0
         out = capsys.readouterr().out
-        assert "OPENGSC_CLIENT_ID" in out
+        assert "EASYGSC_CLIENT_ID" in out
         assert "env-secret" not in out
 
 
@@ -342,9 +342,9 @@ class TestWalkthrough:
             assert url in out
         assert calls == [True]
         opener.assert_not_called()
-        # Setup ends at the connect menu; its settings start this exact opengsc.
+        # Setup ends at the connect menu; its settings start this exact easygsc.
         command, args = setup.connect.launch_command()
-        assert "Connect opengsc to your AI apps" in out
+        assert "Connect easygsc to your AI apps" in out
         assert f"Command:  {command}" in out
         assert all(f"      {arg}\n" in out for arg in args)
 
@@ -435,7 +435,7 @@ class TestSecretOutput:
         assert seen == [{"print_refresh_token": False}]
         assert "Authenticated" in out
         assert str(config_dir / "token.json") in out
-        assert "OPENGSC_REFRESH_TOKEN" not in out
+        assert "EASYGSC_REFRESH_TOKEN" not in out
         assert SECRET not in out
 
     def test_auth_failure_returns_1_and_reports_on_stderr(self, config_dir, monkeypatch, capsys):
@@ -450,8 +450,8 @@ class TestSecretOutput:
         assert setup.run(no_browser=True) == 1
         captured = capsys.readouterr()
         assert "auth failed: denied" in captured.err
-        assert "opengsc setup" in captured.err
-        assert "Connect opengsc to your AI apps" not in captured.out
+        assert "easygsc setup" in captured.err
+        assert "Connect easygsc to your AI apps" not in captured.out
 
     def test_error_text_redacts_client_secret_and_refresh_token(
         self, config_dir, monkeypatch, capsys
@@ -503,7 +503,7 @@ class TestCancellation:
         assert setup.run() == 2
         err = capsys.readouterr().err
         assert "cancelled" in err
-        assert "opengsc setup" in err
+        assert "easygsc setup" in err
 
     def test_quit_at_a_step_prompt_cancels(self, config_dir, downloads, monkeypatch, capsys):
         monkeypatch.setattr(setup.webbrowser, "open", mock.Mock(return_value=True))
@@ -529,7 +529,7 @@ class TestCancellation:
         captured = capsys.readouterr()
         assert "Authenticated" in captured.out
         assert "login is saved" in captured.err
-        assert "opengsc connect" in captured.err
+        assert "easygsc connect" in captured.err
 
 
 class TestInterrupt:
@@ -539,7 +539,7 @@ class TestInterrupt:
 
         assert cli.main(["setup"]) == 130
         err = capsys.readouterr().err
-        assert "opengsc setup" in err
+        assert "easygsc setup" in err
         assert "again" in err
 
 
@@ -562,7 +562,7 @@ class TestCleanFailure:
         assert "Traceback" not in captured.err
         assert "auth failed" in captured.err
         assert "download" in captured.err.lower()
-        assert "Connect opengsc to your AI apps" not in captured.out
+        assert "Connect easygsc to your AI apps" not in captured.out
 
     def test_a_network_failure_during_login_is_reported_cleanly(
         self, config_dir, downloads, monkeypatch, capsys
@@ -579,7 +579,7 @@ class TestCleanFailure:
         captured = capsys.readouterr()
         assert "Traceback" not in captured.err
         assert "auth failed: connection refused" in captured.err
-        assert "opengsc setup" in captured.err
+        assert "easygsc setup" in captured.err
 
     def test_the_error_keeps_secrets_out_of_the_report(
         self, config_dir, downloads, monkeypatch, capsys

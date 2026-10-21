@@ -1,7 +1,7 @@
 """Tests for the MCP tools: defaults, validation, TSV output, metadata block.
 
-HTTP is mocked by patching opengsc.api functions; no network. The date is
-pinned by patching opengsc.server._today.
+HTTP is mocked by patching easygsc.api functions; no network. The date is
+pinned by patching easygsc.server._today.
 """
 
 import json
@@ -9,8 +9,8 @@ from unittest import mock
 
 import pytest
 
-from opengsc import server
-from opengsc.api import ApiError
+from easygsc import server
+from easygsc.api import ApiError
 
 
 @pytest.fixture
@@ -209,9 +209,9 @@ class TestListSites:
         monkeypatch.setattr(
             server.api,
             "list_sites",
-            mock.MagicMock(side_effect=ApiError(401, "invalid", hint="run opengsc auth")),
+            mock.MagicMock(side_effect=ApiError(401, "invalid", hint="run easygsc auth")),
         )
-        assert "run opengsc auth" in server.list_sites()
+        assert "run easygsc auth" in server.list_sites()
 
 
 # -------------------------------------------------------------- sitemaps

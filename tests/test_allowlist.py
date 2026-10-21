@@ -14,7 +14,7 @@ import requests
 import requests_oauthlib
 from google.auth.transport.requests import Request as GoogleAuthRequest
 
-from opengsc.allowlist import (
+from easygsc.allowlist import (
     ALLOWED_HOSTS,
     DisallowedHostError,
     GuardedAuthorizedSession,

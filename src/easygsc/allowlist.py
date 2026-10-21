@@ -37,7 +37,7 @@ def check_allowed(url: str) -> str:
     if host not in ALLOWED_HOSTS:
         raise DisallowedHostError(
             f"Blocked request to non-allowed host {host or '(none)'!r}: {url}. "
-            f"opengsc only talks to: {', '.join(sorted(ALLOWED_HOSTS))}."
+            f"easygsc only talks to: {', '.join(sorted(ALLOWED_HOSTS))}."
         )
     return host
 

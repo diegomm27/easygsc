@@ -576,7 +576,7 @@ wheels = [
 ]
 
 [[package]]
-name = "opengsc"
+name = "easygsc"
 version = "0.2.0"
 source = { editable = "." }
 dependencies = [

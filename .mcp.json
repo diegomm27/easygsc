@@ -1,8 +1,8 @@
 {
   "mcpServers": {
-    "opengsc": {
+    "easygsc": {
       "command": "uvx",
-      "args": ["opengsc@0.2.0"]
+      "args": ["easygsc@0.2.0"]
     }
   }
 }
