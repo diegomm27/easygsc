@@ -234,7 +234,7 @@ class TestAddServer:
         path.chmod(0o444)
         monkeypatch.setattr(connect.os, "replace", mock.Mock(side_effect=OSError("boom")))
         try:
-            with pytest.raises(OSError):
+            with pytest.raises(connect.ConnectError, match="Cannot write"):
                 connect.add_server(path, "mcpServers", ENTRY, never_asked)
             assert stat.S_IMODE(path.stat().st_mode) == 0o444
         finally:
