@@ -39,6 +39,9 @@ def downloads(tmp_path, monkeypatch):
     return d
 
 
+CLIENT_BYTES = json.dumps({"installed": {"client_id": "cid", "client_secret": SECRET}}).encode()
+
+
 def write_client(path, client_id="cid", secret=SECRET, key="installed"):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps({key: {"client_id": client_id, "client_secret": secret}}))
@@ -366,28 +369,6 @@ class TestWalkthrough:
                 f"  {number}. {action}" for number, action in enumerate(actions, start=2)
             ]
 
-    def test_default_mode_opens_the_browser_for_every_step(
-        self, config_dir, downloads, monkeypatch
-    ):
-        write_client(downloads / "client_secret_1.json")
-        doctor_ok(monkeypatch)
-        monkeypatch.setattr(setup.auth, "run_oauth_flow", fake_auth(config_dir))
-        opener = mock.Mock(return_value=True)
-        monkeypatch.setattr(setup.webbrowser, "open", opener)
-        monkeypatch.setattr("builtins.input", feed(*WALKTHROUGH))
-
-        assert setup.run() == 0
-        # The client is created right after the consent screen, as the console offers
-        # it there; Google only lets you publish once Branding has its links.
-        assert [c.args[0] for c in opener.call_args_list] == [
-            setup.PROJECT_URL,
-            setup.API_URL,
-            setup.CONSENT_URL,
-            setup.CLIENT_URL,
-            setup.BRANDING_URL,
-            setup.PUBLISH_URL,
-        ]
-
     def test_branding_step_lists_the_links_and_warns_about_the_logo(
         self, config_dir, downloads, monkeypatch, capsys
     ):
@@ -418,6 +399,98 @@ class TestWalkthrough:
         captured = capsys.readouterr()
         assert SECRET not in captured.out
         assert SECRET not in captured.err
+
+
+class TestWebSetup:
+    def test_default_mode_uses_the_local_page_then_logs_in(
+        self, config_dir, downloads, monkeypatch, capsys
+    ):
+        doctor_ok(monkeypatch)
+        calls = []
+        monkeypatch.setattr(setup.auth, "run_oauth_flow", fake_auth(config_dir, calls))
+        collect = mock.Mock(return_value=CLIENT_BYTES)
+        monkeypatch.setattr(setup.web_setup, "collect_client", collect)
+        opener = mock.Mock(return_value=True)
+        monkeypatch.setattr(setup.webbrowser, "open", opener)
+        monkeypatch.setattr("builtins.input", feed(""))  # Enter at the connect menu
+
+        assert setup.run() == 0
+        assert (config_dir / "client_secret.json").read_bytes() == CLIENT_BYTES
+        assert calls == [False]  # the Google login still opens the browser
+        opener.assert_not_called()  # the page opens the Cloud steps, not the terminal
+        out = capsys.readouterr().out
+        assert "Installed the client" in out
+        assert "Connect easygsc to your AI apps" in out
+        assert SECRET not in out
+
+    def test_the_page_gets_every_step_in_order(self, config_dir, monkeypatch):
+        collect = mock.Mock(side_effect=setup.Cancelled("stop"))
+        monkeypatch.setattr(setup.web_setup, "collect_client", collect)
+
+        assert setup.run() == 2
+        steps = collect.call_args.args[0]
+        assert [url for url, _, _ in steps] == [url for url, _, _ in setup.STEPS]
+        client = next(actions for url, _, actions in steps if url == setup.CLIENT_URL)
+        # On the page the file is uploaded, not picked up from Downloads.
+        assert "upload" in client[-1]
+        assert "Downloads" not in client[-1]
+
+    def test_the_page_check_explains_a_bad_file_and_accepts_a_desktop_client(
+        self, config_dir, monkeypatch
+    ):
+        collect = mock.Mock(side_effect=setup.Cancelled("stop"))
+        monkeypatch.setattr(setup.web_setup, "collect_client", collect)
+        setup.run()
+        check = collect.call_args.args[1]
+
+        assert check(CLIENT_BYTES) is None
+        assert "Desktop app" in check(json.dumps({"web": {"client_id": "c"}}).encode())
+        assert "not valid JSON" in check(b"{oops")
+        assert "not valid JSON" in check(bytes([0xFF, 0xFE]))
+        no_secret = check(json.dumps({"installed": {"client_id": "c"}}).encode())
+        assert "client_secret" in no_secret
+
+    def test_without_a_browser_it_falls_back_to_the_terminal_walkthrough(
+        self, config_dir, downloads, monkeypatch, capsys
+    ):
+        write_client(downloads / "client_secret_1.json")
+        doctor_ok(monkeypatch)
+        calls = []
+        monkeypatch.setattr(setup.auth, "run_oauth_flow", fake_auth(config_dir, calls))
+        monkeypatch.setattr(setup.web_setup, "collect_client", mock.Mock(return_value=None))
+        opener = mock.Mock(return_value=True)
+        monkeypatch.setattr(setup.webbrowser, "open", opener)
+        monkeypatch.setattr("builtins.input", feed(*WALKTHROUGH))
+
+        assert setup.run() == 0
+        out = capsys.readouterr().out
+        assert "continues here" in out
+        for url, _, _ in setup.STEPS:
+            assert url in out
+        opener.assert_not_called()
+        assert calls == [True]
+
+    def test_no_browser_never_starts_the_page(self, config_dir, downloads, monkeypatch):
+        write_client(downloads / "client_secret_1.json")
+        doctor_ok(monkeypatch)
+        monkeypatch.setattr(setup.auth, "run_oauth_flow", fake_auth(config_dir))
+        collect = mock.Mock()
+        monkeypatch.setattr(setup.web_setup, "collect_client", collect)
+        monkeypatch.setattr("builtins.input", feed(*WALKTHROUGH))
+
+        assert setup.run(no_browser=True) == 0
+        collect.assert_not_called()
+
+    def test_a_configured_client_skips_the_page(self, config_dir, monkeypatch):
+        write_client(config_dir / "client_secret.json")
+        write_token(config_dir)
+        doctor_ok(monkeypatch)
+        collect = mock.Mock()
+        monkeypatch.setattr(setup.web_setup, "collect_client", collect)
+        monkeypatch.setattr("builtins.input", feed(""))
+
+        assert setup.run() == 0
+        collect.assert_not_called()
 
 
 class TestSecretOutput:
@@ -500,7 +573,7 @@ class TestCancellation:
     def test_eof_at_the_path_prompt_cancels(self, config_dir, downloads, monkeypatch, capsys):
         monkeypatch.setattr(setup.webbrowser, "open", mock.Mock(return_value=True))
         monkeypatch.setattr("builtins.input", mock.Mock(side_effect=EOFError))
-        assert setup.run() == 2
+        assert setup.run(no_browser=True) == 2
         err = capsys.readouterr().err
         assert "cancelled" in err
         assert "easygsc setup" in err
@@ -508,7 +581,7 @@ class TestCancellation:
     def test_quit_at_a_step_prompt_cancels(self, config_dir, downloads, monkeypatch, capsys):
         monkeypatch.setattr(setup.webbrowser, "open", mock.Mock(return_value=True))
         monkeypatch.setattr("builtins.input", feed("q"))
-        assert setup.run() == 2
+        assert setup.run(no_browser=True) == 2
         assert "cancelled" in capsys.readouterr().err
 
     def test_quit_at_a_confirm_prompt_cancels(self, config_dir, downloads, monkeypatch, capsys):
@@ -537,10 +610,18 @@ class TestInterrupt:
         monkeypatch.setattr(setup.webbrowser, "open", mock.Mock(return_value=True))
         monkeypatch.setattr("builtins.input", mock.Mock(side_effect=KeyboardInterrupt))
 
-        assert cli.main(["setup"]) == 130
+        assert cli.main(["setup", "--no-browser"]) == 130
         err = capsys.readouterr().err
         assert "easygsc setup" in err
         assert "again" in err
+
+    def test_ctrl_c_while_the_page_waits_exits_130(self, config_dir, monkeypatch, capsys):
+        monkeypatch.setattr(
+            setup.web_setup, "collect_client", mock.Mock(side_effect=KeyboardInterrupt)
+        )
+
+        assert cli.main(["setup"]) == 130
+        assert "easygsc setup" in capsys.readouterr().err
 
 
 class TestCleanFailure:

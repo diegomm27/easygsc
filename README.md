@@ -28,7 +28,7 @@ You need:
 uvx easygsc setup
 ```
 
-It walks you through the Google Cloud steps one at a time, opening the right page in your browser and waiting for you to finish:
+It opens a local setup page in your browser with the Google Cloud steps, each with its link and a box to tick when you finish:
 
 1. Create a project.
 2. Enable the Search Console API.
@@ -37,11 +37,13 @@ It walks you through the Google Cloud steps one at a time, opening the right pag
 5. Fill in Branding with your website's links (no logo).
 6. Publish the app.
 
-Then it finds the JSON in your Downloads folder (or the OneDrive one, or asks for the path), checks it is a Desktop client, copies it to `~/.config/easygsc/client_secret.json` with `0600` permissions, runs the Google login, checks that your properties are readable, and moves on to Step 2. It tells you which file it used and where it installed it.
+The last step on the page takes the JSON: drop it there or pick it. The page checks it is a Desktop client and explains what is wrong if not. Back in the terminal, setup copies it to `~/.config/easygsc/client_secret.json` with `0600` permissions, runs the Google login, checks that your properties are readable, and moves on to Step 2.
+
+The page runs on your own computer (`127.0.0.1`), only answers the address setup printed and stops as soon as it has the file.
 
 - It never overwrites a different client file without asking, and only deletes your download if you say yes.
-- No browser? Add `--no-browser` to print the URLs instead.
-- Type `q` or press Ctrl+C at any prompt to stop; run `uvx easygsc setup` again to resume.
+- No browser? Add `--no-browser`: the terminal prints each step's URL instead, then finds the JSON in your Downloads folder (or the OneDrive one, or asks for the path). Setup does the same when it can't open a browser.
+- Type `q` or press Ctrl+C at any prompt (Ctrl+C while the page is open) to stop; run `uvx easygsc setup` again to resume.
 
 ### Step 2. Pick your AI apps
 
@@ -275,6 +277,7 @@ To revoke access at any time: [myaccount.google.com/permissions](https://myaccou
 - **Network lock:** every request goes through one guard ([`src/easygsc/allowlist.py`](src/easygsc/allowlist.py)) that only allows `www.googleapis.com`, `searchconsole.googleapis.com`, `oauth2.googleapis.com` and `accounts.google.com`. Anything else, redirects included, fails before it's sent.
 - **Endpoints used:** `sites.list`, `searchAnalytics.query`, `sitemaps.list`, `urlInspection.index.inspect`. Nothing else.
 - **Files on disk:** `~/.config/easygsc/client_secret.json` (yours, installed by `easygsc setup` with `0600` permissions) and `~/.config/easygsc/token.json` (your login, also `0600`; best effort on Windows). **Keep `token.json` private:** whoever has it can read your Search Console.
+- **Setup page:** `setup` serves its page on `127.0.0.1` with a random port and a one-time token, refuses other hosts and origins, and stops once it has the client file ([`src/easygsc/web_setup.py`](src/easygsc/web_setup.py)).
 - **AI app settings:** `setup` and `connect` only touch the apps you pick, back up each file first and make no network calls ([`src/easygsc/connect.py`](src/easygsc/connect.py)).
 - **Dependencies:** `mcp`, `google-auth`, `google-auth-oauthlib`, pinned exactly. That's all.
 - **Not included on purpose:** writes, analysis or scoring, telemetry, update checks, bundled prompts.

@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>easygsc setup</title>
+<style nonce="{{nonce}}">
+  :root {
+    --bg: #f7f7f5; --card: #ffffff; --text: #1d1d1b; --muted: #5f5f5a;
+    --line: #e3e3de; --accent: #1a5fd0; --ok: #1b7a3d; --error: #b3261e;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #161615; --card: #20201e; --text: #ececea; --muted: #a3a39d;
+      --line: #34342f; --accent: #7aa7ff; --ok: #6fcf8f; --error: #ff8a80;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  main { max-width: 720px; margin: 0 auto; padding: 32px 16px 64px; }
+  h1 { font-size: 1.6rem; margin: 0 0 4px; }
+  .lead { color: var(--muted); margin: 0 0 24px; }
+  ol.steps { list-style: none; counter-reset: step; padding: 0; margin: 0; }
+  ol.steps > li {
+    counter-increment: step; background: var(--card); border: 1px solid var(--line);
+    border-radius: 10px; padding: 16px 18px; margin-bottom: 12px;
+  }
+  .step > label { display: flex; gap: 10px; align-items: center; cursor: pointer; }
+  .step > label::before, .upload h2::before {
+    content: counter(step); flex: none; width: 28px; height: 28px; border-radius: 50%;
+    display: inline-grid; place-items: center; font-weight: 600; font-size: .9rem;
+    background: var(--line);
+  }
+  .title, .upload h2 { font-weight: 600; font-size: 1.05rem; }
+  .step ol { margin: 10px 0 0; padding-left: 64px; color: var(--muted); }
+  .step ol li { margin: 2px 0; }
+  a { color: var(--accent); word-break: break-all; }
+  .step.done { opacity: .6; }
+  .step.done .title { text-decoration: line-through; }
+  .upload h2 { display: flex; gap: 10px; align-items: center; margin: 0 0 10px; }
+  #drop {
+    display: block; border: 2px dashed var(--line); border-radius: 10px; padding: 24px;
+    text-align: center; color: var(--muted); cursor: pointer;
+  }
+  #drop.over { border-color: var(--accent); color: var(--text); }
+  #drop.done { border-style: solid; border-color: var(--ok); }
+  #client { display: block; margin: 12px auto 0; max-width: 100%; }
+  #status { min-height: 1.5em; margin: 12px 0 0; font-weight: 500; }
+  #status.ok { color: var(--ok); }
+  #status.error { color: var(--error); }
+</style>
+</head>
+<body data-token="{{token}}" data-max="{{max}}">
+<main>
+  <h1>Set up easygsc</h1>
+  <p class="lead">Follow these steps in Google Cloud. Each link opens in a new tab;
+    tick a step when you finish it. The terminal waits for the client file.</p>
+  <ol class="steps">
+{{steps}}
+    <li class="upload">
+      <h2>Upload the client file</h2>
+      <label id="drop" for="client">Drop the client_secret JSON you downloaded here, or choose it:
+        <input id="client" type="file" accept=".json,application/json">
+      </label>
+      <p id="status" role="status" aria-live="polite"></p>
+    </li>
+  </ol>
+</main>
+<script nonce="{{nonce}}">
+  const token = document.body.dataset.token;
+  const max = Number(document.body.dataset.max);
+  const input = document.getElementById("client");
+  const zone = document.getElementById("drop");
+  const status = document.getElementById("status");
+
+  function show(text, kind) {
+    status.textContent = text;
+    status.className = kind;
+  }
+
+  async function send(file) {
+    if (!file || input.disabled) return;
+    if (file.size > max) {
+      show("That file is too large for an OAuth client.", "error");
+      return;
+    }
+    show("Checking " + file.name + "...", "");
+    let response;
+    try {
+      response = await fetch("/client", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Easygsc-Token": token },
+        body: await file.text(),
+      });
+    } catch (err) {
+      show("The terminal is no longer waiting. Run 'easygsc setup' again.", "error");
+      return;
+    }
+    const result = await response.json().catch(() => ({}));
+    if (response.ok) {
+      input.disabled = true;
+      zone.classList.add("done");
+      show("Client received. Go back to the terminal: the Google login opens next. " +
+        "You can close this tab.", "ok");
+    } else {
+      show(result.error || "That file could not be used.", "error");
+    }
+  }
+
+  input.addEventListener("change", () => send(input.files[0]));
+  // Keep a file dropped anywhere from replacing the page.
+  window.addEventListener("dragover", (event) => event.preventDefault());
+  window.addEventListener("drop", (event) => event.preventDefault());
+  zone.addEventListener("dragover", () => zone.classList.add("over"));
+  zone.addEventListener("dragleave", () => zone.classList.remove("over"));
+  zone.addEventListener("drop", (event) => {
+    zone.classList.remove("over");
+    send(event.dataTransfer.files[0]);
+  });
+  document.querySelectorAll(".step input").forEach((box) => {
+    box.addEventListener("change", () => box.closest(".step").classList.toggle("done", box.checked));
+  });
+</script>
+</body>
+</html>
