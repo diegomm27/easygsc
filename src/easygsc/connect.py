@@ -85,7 +85,13 @@ def launch_command() -> tuple[str, list[str]]:
 
 
 def _backup(path: Path) -> Path:
-    backup = path.with_name(f"{path.name}.{time.strftime('%Y%m%d-%H%M%S')}.bak")
+    """Copy the current file to a new `.bak`; an older backup is never overwritten."""
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    backup = path.with_name(f"{path.name}.{stamp}.bak")
+    counter = 1
+    while backup.exists():  # two writes in the same second, or a loop over configs
+        counter += 1
+        backup = path.with_name(f"{path.name}.{stamp}-{counter}.bak")
     shutil.copy2(path, backup)
     return backup
 
