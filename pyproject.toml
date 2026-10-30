@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "easygsc"
-version = "0.3.0"
+version = "0.3.1"
 description = "Minimal, transparent, read-only MCP server for Google Search Console."
 readme = "README.md"
 license = "MIT"

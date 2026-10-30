@@ -2,7 +2,7 @@
   "mcpServers": {
     "easygsc": {
       "command": "uvx",
-      "args": ["easygsc@0.3.0"]
+      "args": ["easygsc@0.3.1"]
     }
   }
 }

@@ -81,13 +81,23 @@ class TestPage:
         assert "leaving your download unchanged" in text
         assert "sign in with Google and request read-only access to Search Console" in text
 
+    def test_nan_credit_is_a_safe_link_without_external_resources(self, server):
+        status, headers, page = request(server, "GET", "/?token=" + token_of(server))
+        assert status == 200
+        assert '<footer class="credit">' in page
+        assert '<a href="https://nan.builders/?ref=built-with-nan"' in page
+        assert 'target="_blank" rel="noopener noreferrer">Built with NaN</a>' in page
+        assert "<img" not in page
+        assert "<iframe" not in page
+        assert "default-src 'none'" in headers["Content-Security-Policy"]
+
     def test_links_and_headers_never_leak_the_token(self, server):
         _, headers, page = request(server, "GET", "/?token=" + token_of(server))
         assert headers["Referrer-Policy"] == "no-referrer"
         assert "default-src 'none'" in headers["Content-Security-Policy"]
         assert "frame-ancestors 'none'" in headers["Content-Security-Policy"]
         assert headers["Cache-Control"] == "no-store"
-        assert page.count('rel="noopener noreferrer"') == len(STEPS)
+        assert page.count('rel="noopener noreferrer"') == len(STEPS) + 1  # NaN credit
 
     @pytest.mark.parametrize("query", ["", "?token=", "?token=wrong"])
     def test_a_missing_or_wrong_token_gets_nothing(self, server, query):

@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/diegomm27/easygsc/actions/workflows/ci.yml/badge.svg)](https://github.com/diegomm27/easygsc/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Built with NaN](https://nan.builders/badge/built-with-nan-compact.svg)](https://nan.builders/?ref=built-with-nan)
 
 Let your AI app (Claude, Codex, Gemini, Cursor, VS Code Copilot or any other MCP app) read your **Google Search Console** data and help you with SEO.
 
@@ -78,7 +79,7 @@ Then do what it says for each app (usually: restart it) and ask *"List my Search
   "mcpServers": {
     "easygsc": {
       "command": "uvx",
-      "args": ["easygsc@0.3.0"]
+      "args": ["easygsc@0.3.1"]
     }
   }
 }
@@ -94,10 +95,10 @@ claude plugin marketplace add diegomm27/easygsc
 claude plugin install easygsc@easygsc
 
 # or as a plain MCP server
-claude mcp add easygsc -- uvx easygsc@0.3.0
+claude mcp add easygsc -- uvx easygsc@0.3.1
 ```
 
-**Any other MCP client:** run `uvx easygsc@0.3.0` over stdio.
+**Any other MCP client:** run `uvx easygsc@0.3.1` over stdio.
 
 If the app can't find `uvx`, use its full path (`which uvx`, or `where uvx` on Windows) as the command. `easygsc connect` does this for you.
 
