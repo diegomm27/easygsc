@@ -100,7 +100,7 @@ def main(argv: list[str] | None = None) -> int:
     setup_parser.add_argument(
         "--no-browser",
         action="store_true",
-        help="print URLs instead of opening a browser window",
+        help="stay in the terminal and print URLs instead of opening the setup page",
     )
 
     sub.add_parser(

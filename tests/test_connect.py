@@ -623,3 +623,18 @@ class TestCliApps:
         monkeypatch.setattr("builtins.input", feed(""))
         assert connect.choose_and_connect([REAL["Codex (OpenAI)"]]) == 1
         assert "'codex mcp add' failed: config locked" in capsys.readouterr().out
+
+    def test_two_backups_in_the_same_second_keep_the_original(self, tmp_path):
+        # A second connect within the same second must not overwrite the backup that
+        # still holds the user's original config.
+        path = tmp_path / "config.json"
+        path.write_text(json.dumps({"mcpServers": {"other": {"command": "x", "args": []}}}))
+        original = path.read_text()
+        connect.add_server(path, "mcpServers", ENTRY, never_asked)
+        first = connect.add_server(
+            path, "mcpServers", {"command": "/abs/uvx", "args": ["2"]}, lambda: True
+        )[1]
+        backups = sorted(tmp_path.glob("*.bak"))
+        assert len(backups) == 2
+        assert original in [b.read_text() for b in backups]
+        assert first in backups

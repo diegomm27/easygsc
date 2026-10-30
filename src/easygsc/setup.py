@@ -2,21 +2,21 @@
 connect the user's AI apps (``connect``).
 
 Only ``run_oauth_flow`` and the doctor check make network calls, through the existing
-allowlist guard. Nothing here prints the client secret.
+allowlist guard. With a browser, the Cloud steps and the client upload run on a local
+page (``web_setup``) that listens on loopback only. Nothing here prints the client secret.
 """
 
 from __future__ import annotations
 
 import json
 import os
-import shutil
 import sys
 import tempfile
 import webbrowser
 from collections.abc import Sequence
 from pathlib import Path
 
-from . import auth, connect
+from . import auth, connect, web_setup
 from .cli import _doctor
 from .prompts import Cancelled, ask, confirm
 
@@ -34,16 +34,21 @@ BRANDING_URL = "https://console.cloud.google.com/auth/branding"
 # README's security section) is the fallback for sites without a privacy page.
 PRIVACY_URL = "https://github.com/diegomm27/easygsc#security-and-transparency"
 
+CLIENT_ACTIONS = (
+    "Click 'Create client'.",
+    "Application type: Desktop app (not Web application).",
+    "Name: easygsc.",
+    "Click 'Create', then 'Download JSON' right away: Google won't show the secret again.",
+)
 CLIENT_STEP = (
     CLIENT_URL,
     "Create the OAuth client",
-    (
-        "Click 'Create client'.",
-        "Application type: Desktop app (not Web application).",
-        "Name: easygsc.",
-        "Click 'Create', then 'Download JSON' right away: Google won't show the secret again.",
-        "Leave the file in Downloads; setup picks it up from there.",
-    ),
+    CLIENT_ACTIONS + ("Leave the file in Downloads; setup picks it up from there.",),
+)
+WEB_CLIENT_STEP = (
+    CLIENT_URL,
+    "Create the OAuth client",
+    CLIENT_ACTIONS + ("Keep the file: you upload it in the last step of this page.",),
 )
 
 STEPS = (
@@ -103,6 +108,9 @@ STEPS = (
     ),
 )
 
+# The setup page shows the same steps; only the client step ends differently.
+WEB_STEPS = tuple(WEB_CLIENT_STEP if step is CLIENT_STEP else step for step in STEPS)
+
 
 class SetupError(RuntimeError):
     """A setup problem the user can fix; the message is user-facing."""
@@ -131,21 +139,37 @@ def _step(url: str, title: str, actions: Sequence[str], no_browser: bool) -> Non
 def load_client(path: Path) -> dict:
     """Return a validated Desktop-app client config, or raise SetupError."""
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        raw = path.read_bytes()
     except OSError as exc:
         raise SetupError(f"Cannot read {path}: {exc}") from exc
-    except json.JSONDecodeError:
-        raise SetupError(f"{path} is not valid JSON.") from None
+    return parse_client(raw, str(path))
+
+
+def parse_client(raw: bytes, label: str) -> dict:
+    """Validate client JSON bytes; ``label`` names the file in error messages."""
+    try:
+        data = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        raise SetupError(f"{label} is not valid JSON.") from None
     installed = data.get("installed") if isinstance(data, dict) else None
     if installed:
         if not installed.get("client_id") or not installed.get("client_secret"):
-            raise SetupError(f"{path} has no client_id/client_secret under 'installed'.")
+            raise SetupError(f"{label} has no client_id/client_secret under 'installed'.")
         return data
     if isinstance(data, dict) and "web" in data:
         raise WebClientError(
             "That is a Web application client; easygsc needs a Desktop app client."
         )
-    raise SetupError(f"{path} is not a Google OAuth client file (no 'installed' key).")
+    raise SetupError(f"{label} is not a Google OAuth client file (no 'installed' key).")
+
+
+def _client_problem(raw: bytes) -> str | None:
+    """The setup page's check: a user-facing problem, or None for a usable client."""
+    try:
+        parse_client(raw, "That file")
+    except SetupError as exc:
+        return str(exc)
+    return None
 
 
 def _configured_where() -> str | None:
@@ -217,11 +241,13 @@ def _obtain_client(no_browser: bool) -> Path:
             source = None
 
 
-def install_client(source: Path, dest: Path | None = None) -> Path:
-    """Copy (never move) the client JSON to the config dir with 0600 permissions."""
+def install_client(source: Path | bytes, dest: Path | None = None) -> Path:
+    """Copy (never move) the client JSON, a file or uploaded bytes, to the config dir
+    with 0600 permissions."""
     dest = dest if dest is not None else auth.CLIENT_SECRET_PATH
+    data = source if isinstance(source, bytes) else source.read_bytes()
     try:
-        same = dest.read_bytes() == source.read_bytes()
+        same = dest.read_bytes() == data
     except OSError:
         same = False
     if dest.is_file() and same:
@@ -234,8 +260,8 @@ def install_client(source: Path, dest: Path | None = None) -> Path:
     dest.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp_name = tempfile.mkstemp(dir=dest.parent, prefix=".client_secret-", suffix=".tmp")
     try:
-        with os.fdopen(fd, "wb") as out, open(source, "rb") as src:
-            shutil.copyfileobj(src, out)
+        with os.fdopen(fd, "wb") as out:
+            out.write(data)
             out.flush()
             os.fsync(out.fileno())
         try:
@@ -331,6 +357,15 @@ def _run(no_browser: bool) -> int:
             return _connect_apps()
         if confirm("Skip the Google Cloud walkthrough and run auth now? [Y/n] ", default=True):
             return _authenticate(no_browser)
+
+    if not no_browser:
+        uploaded = web_setup.collect_client(WEB_STEPS, _client_problem)
+        if uploaded is not None:
+            install_client(uploaded)
+            print("You can delete the client file you downloaded; easygsc keeps its own copy.")
+            return _authenticate(no_browser)
+        print("\nCould not open a browser, so setup continues here.")
+        no_browser = True
 
     for url, title, actions in STEPS:
         _step(url, title, actions, no_browser)
