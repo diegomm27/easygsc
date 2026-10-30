@@ -10,7 +10,7 @@ import pytest
 from easygsc import __version__, connect
 
 SHA = "bbbc2a472fd253cac4bb9c2eed3b2aae919b197c"
-ENTRY = {"command": "/abs/uvx", "args": ["easygsc@0.2.0"]}
+ENTRY = {"command": "/abs/uvx", "args": ["easygsc@0.3.0"]}
 
 
 def on_path(monkeypatch, **tools):
@@ -50,7 +50,7 @@ class TestLaunchCommand:
         assert connect.launch_command() == ("/abs/uvx", ["--from", str(tmp_path), "easygsc"])
 
     def test_wheel_install_runs_from_that_wheel(self, monkeypatch, tmp_path):
-        wheel = tmp_path / "easygsc-0.2.0-py3-none-any.whl"
+        wheel = tmp_path / "easygsc-0.3.0-py3-none-any.whl"
         installed_from(monkeypatch, {"url": wheel.as_uri(), "archive_info": {}})
         on_path(monkeypatch, uvx="/abs/uvx")
         assert connect.launch_command() == ("/abs/uvx", ["--from", str(wheel), "easygsc"])
@@ -218,7 +218,7 @@ class TestAddServer:
             for stale in tmp_path.glob("*.bak"):  # a later run: no same-second name clash
                 stale.chmod(stat.S_IREAD | stat.S_IWRITE)
                 stale.unlink()
-            newer = {"command": "/abs/uvx", "args": ["easygsc@0.3.0"]}
+            newer = {**ENTRY, "command": ENTRY["command"] + "-updated"}
             assert connect.add_server(path, "mcpServers", newer, lambda: True)[0] == "updated"
             assert json.loads(path.read_text())["mcpServers"]["easygsc"] == newer
         finally:
@@ -259,7 +259,7 @@ class TestAddServer:
 
 # Captured at import, before the autouse guard in conftest swaps APPS for ().
 REAL = {app.name: app for app in connect.APPS}
-COMMAND = ("/abs/uvx", ["easygsc@0.2.0"])
+COMMAND = ("/abs/uvx", ["easygsc@0.3.0"])
 
 
 def feed(*answers):
@@ -315,7 +315,7 @@ class TestMenu:
         assert "1. Found  (found on this computer)" in out
         assert "2. Missing\n" in out
         assert json.loads(found_path.read_text()) == {
-            "mcpServers": {"easygsc": {"command": "/abs/uvx", "args": ["easygsc@0.2.0"]}}
+            "mcpServers": {"easygsc": {"command": "/abs/uvx", "args": ["easygsc@0.3.0"]}}
         }
         assert not other_path.exists()
         assert "Connected." in out and "Next: Restart Found." in out
@@ -460,12 +460,12 @@ class TestJsonApps:
         assert REAL["VS Code (GitHub Copilot)"].entry(*COMMAND) == {
             "type": "stdio",
             "command": "/abs/uvx",
-            "args": ["easygsc@0.2.0"],
+            "args": ["easygsc@0.3.0"],
         }
         assert REAL["Cursor"].entry(*COMMAND)["type"] == "stdio"
         assert REAL["Claude Desktop"].entry(*COMMAND) == {
             "command": "/abs/uvx",
-            "args": ["easygsc@0.2.0"],
+            "args": ["easygsc@0.3.0"],
         }
 
 
@@ -531,7 +531,7 @@ class TestCliApps:
 
         run.assert_called_once_with(
             ["/bin/claude", "mcp", "add", "--scope", "user", "easygsc", "--"]
-            + ["/abs/uvx", "easygsc@0.2.0"]
+            + ["/abs/uvx", "easygsc@0.3.0"]
         )
         assert "Next: Start a new Claude Code session." in capsys.readouterr().out
 
@@ -584,7 +584,7 @@ class TestCliApps:
             assert calls == calls[:1]
         else:
             assert calls[1:] == [
-                ["/bin/codex", "mcp", "add", "easygsc", "--", "/abs/uvx", "easygsc@0.2.0"]
+                ["/bin/codex", "mcp", "add", "easygsc", "--", "/abs/uvx", "easygsc@0.3.0"]
             ]
 
     def test_codex_adds_without_asking_when_it_has_no_entry(self, launch, monkeypatch):
@@ -608,14 +608,14 @@ class TestCliApps:
         assert connect.choose_and_connect([REAL["Claude Code"]]) == 1
         out = capsys.readouterr().out
         assert "old entry was already removed" in out
-        assert "claude mcp add --scope user easygsc -- /abs/uvx easygsc@0.2.0" in out
+        assert "claude mcp add --scope user easygsc -- /abs/uvx easygsc@0.3.0" in out
 
     def test_a_missing_cli_prints_the_command_to_run(self, launch, monkeypatch, capsys):
         monkeypatch.setattr("builtins.input", feed("1"))
         assert connect.choose_and_connect([REAL["Claude Code"]]) == 1
         out = capsys.readouterr().out
         assert "the 'claude' command was not found" in out
-        assert "claude mcp add --scope user easygsc -- /abs/uvx easygsc@0.2.0" in out
+        assert "claude mcp add --scope user easygsc -- /abs/uvx easygsc@0.3.0" in out
 
     def test_a_failing_cli_reports_its_last_line(self, launch, monkeypatch, capsys):
         on_path(monkeypatch, codex="/bin/codex")
