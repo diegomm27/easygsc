@@ -48,6 +48,7 @@
   }
   #drop.over { border-color: var(--accent); color: var(--text); }
   #drop.done { border-style: solid; border-color: var(--ok); }
+  #client-help { margin: 0 0 12px; color: var(--muted); font-size: .9rem; }
   #client { display: block; margin: 12px auto 0; max-width: 100%; }
   #status { min-height: 1.5em; margin: 12px 0 0; font-weight: 500; }
   #status.ok { color: var(--ok); }
@@ -63,8 +64,13 @@
 {{steps}}
     <li class="upload">
       <h2>Upload the client file</h2>
+      <p id="client-help">This file goes only to easygsc on your computer, not to an easygsc
+        cloud server. Setup checks it and saves a local copy at
+        <code>~/.config/easygsc/client_secret.json</code>, leaving your download unchanged.
+        Its credentials are used to sign in with Google and request read-only access to
+        Search Console.</p>
       <label id="drop" for="client">Drop the client_secret JSON you downloaded here, or choose it:
-        <input id="client" type="file" accept=".json,application/json">
+        <input id="client" type="file" accept=".json,application/json" aria-describedby="client-help">
       </label>
       <p id="status" role="status" aria-live="polite"></p>
     </li>

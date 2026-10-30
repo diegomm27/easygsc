@@ -69,6 +69,18 @@ class TestPage:
             assert all(action.replace("'", "&#x27;") in page for action in actions)
         assert 'type="file"' in page
 
+    def test_explains_file_handling_before_the_file_picker(self, server):
+        status, _, page = request(server, "GET", "/?token=" + token_of(server))
+        assert status == 200
+        assert 'aria-describedby="client-help"' in page
+        assert page.index('id="client-help"') < page.index('id="client"')
+        text = " ".join(page.split())
+        assert "only to easygsc on your computer" in text
+        assert "not to an easygsc cloud server" in text
+        assert "~/.config/easygsc/client_secret.json" in text
+        assert "leaving your download unchanged" in text
+        assert "sign in with Google and request read-only access to Search Console" in text
+
     def test_links_and_headers_never_leak_the_token(self, server):
         _, headers, page = request(server, "GET", "/?token=" + token_of(server))
         assert headers["Referrer-Policy"] == "no-referrer"
