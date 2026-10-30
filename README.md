@@ -78,7 +78,7 @@ Then do what it says for each app (usually: restart it) and ask *"List my Search
   "mcpServers": {
     "easygsc": {
       "command": "uvx",
-      "args": ["easygsc@0.2.0"]
+      "args": ["easygsc@0.3.0"]
     }
   }
 }
@@ -94,10 +94,10 @@ claude plugin marketplace add diegomm27/easygsc
 claude plugin install easygsc@easygsc
 
 # or as a plain MCP server
-claude mcp add easygsc -- uvx easygsc@0.2.0
+claude mcp add easygsc -- uvx easygsc@0.3.0
 ```
 
-**Any other MCP client:** run `uvx easygsc@0.2.0` over stdio.
+**Any other MCP client:** run `uvx easygsc@0.3.0` over stdio.
 
 If the app can't find `uvx`, use its full path (`which uvx`, or `where uvx` on Windows) as the command. `easygsc connect` does this for you.
 

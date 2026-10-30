@@ -1,7 +1,7 @@
 {
   "name": "easygsc",
   "displayName": "EasyGSC",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Read-only Google Search Console data for Claude: properties, search analytics, sitemaps, URL inspection.",
   "author": {
     "name": "diegomm27"
