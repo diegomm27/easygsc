@@ -1,9 +1,12 @@
-"""Tests for the guided setup wizard: input, browser, files and HTTP all mocked."""
+"""Guided setup tests: isolated files and loopback HTTP; Google and AI apps are mocked."""
 
+import http.client
 import json
 import os
 import stat
+from contextlib import closing
 from unittest import mock
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
@@ -402,6 +405,48 @@ class TestWalkthrough:
 
 
 class TestWebSetup:
+    def test_real_upload_recovers_from_a_bad_file_and_finishes_setup(
+        self, config_dir, downloads, monkeypatch, capsys
+    ):
+        doctor_ok(monkeypatch)
+        calls = []
+        monkeypatch.setattr(setup.auth, "run_oauth_flow", fake_auth(config_dir, calls))
+        monkeypatch.setattr("builtins.input", feed(""))
+        ports = []
+
+        def open_page(address):
+            url = urlsplit(address)
+            ports.append(url.port)
+            token = parse_qs(url.query)["token"][0]
+            with closing(http.client.HTTPConnection(url.hostname, url.port, timeout=5)) as conn:
+                conn.request("GET", url.path + "?" + url.query)
+                page = conn.getresponse()
+                assert page.status == 200
+                assert b"Upload the client file" in page.read()
+            for raw, status in ((b'{"installed":"x"}', 400), (CLIENT_BYTES, 200)):
+                with closing(http.client.HTTPConnection(url.hostname, url.port, timeout=5)) as conn:
+                    conn.request("POST", "/client", raw, {"X-Easygsc-Token": token})
+                    response = conn.getresponse()
+                    assert response.status == status
+                    body = json.loads(response.read())
+                    if status == 400:
+                        assert "installed" in body["error"]
+                        assert not config_dir.exists()
+            return True
+
+        monkeypatch.setattr(setup.webbrowser, "open", open_page)
+        assert cli.main(["setup"]) == 0
+        assert (config_dir / "client_secret.json").read_bytes() == CLIENT_BYTES
+        assert json.loads((config_dir / "token.json").read_text())["refresh_token"] == REFRESH
+        assert calls == [False]
+        captured = capsys.readouterr()
+        assert "Connect easygsc to your AI apps" in captured.out
+        assert SECRET not in captured.out + captured.err
+        assert REFRESH not in captured.out + captured.err
+        with closing(http.client.HTTPConnection("127.0.0.1", ports[0], timeout=1)) as conn:
+            with pytest.raises(OSError):
+                conn.request("GET", "/")
+
     def test_default_mode_uses_the_local_page_then_logs_in(
         self, config_dir, downloads, monkeypatch, capsys
     ):
@@ -626,6 +671,44 @@ class TestInterrupt:
 
 class TestCleanFailure:
     """A person following the wizard must never get a Python traceback."""
+
+    @pytest.mark.parametrize(
+        "raw",
+        [
+            b'{"installed":"x"}',
+            b'{"installed":["x"]}',
+            b'{"installed":true}',
+            b'{"installed":{"client_id":42,"client_secret":"secret"}}',
+            b'{"installed":{"client_id":"cid","client_secret":["secret"]}}',
+            b"{not json",
+            b'"not an object"',
+        ],
+    )
+    def test_malformed_saved_and_downloaded_clients_can_be_replaced(
+        self, raw, config_dir, downloads, tmp_path, monkeypatch, capsys
+    ):
+        config_dir.mkdir()
+        saved = config_dir / "client_secret.json"
+        saved.write_bytes(raw)
+        bad = downloads / "client_secret_bad.json"
+        bad.write_bytes(raw)
+        good = write_client(tmp_path / "replacement.json")
+        monkeypatch.setattr(setup, "find_downloaded", lambda: bad)
+        monkeypatch.setattr(setup.auth, "run_oauth_flow", fake_auth(config_dir))
+        doctor_ok(monkeypatch)
+        monkeypatch.setattr(
+            "builtins.input", feed(*("",) * len(setup.STEPS), str(good), "y", "n", "")
+        )
+
+        assert cli.main(["setup", "--no-browser"]) == 0
+        assert saved.read_bytes() == good.read_bytes() == CLIENT_BYTES
+        assert bad.read_bytes() == raw
+        assert (config_dir / "token.json").is_file()
+        captured = capsys.readouterr()
+        assert "Connect easygsc to your AI apps" in captured.out
+        assert "Traceback" not in captured.out + captured.err
+        assert SECRET not in captured.out + captured.err
+        assert REFRESH not in captured.out + captured.err
 
     def test_a_malformed_client_is_reported_with_a_fix(
         self, config_dir, downloads, monkeypatch, capsys

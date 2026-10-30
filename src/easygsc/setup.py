@@ -153,7 +153,12 @@ def parse_client(raw: bytes, label: str) -> dict:
         raise SetupError(f"{label} is not valid JSON.") from None
     installed = data.get("installed") if isinstance(data, dict) else None
     if installed:
-        if not installed.get("client_id") or not installed.get("client_secret"):
+        if not isinstance(installed, dict):
+            raise SetupError(f"{label} has an invalid 'installed' section (expected an object).")
+        if any(
+            not isinstance(installed.get(key), str) or not installed[key].strip()
+            for key in ("client_id", "client_secret")
+        ):
             raise SetupError(f"{label} has no client_id/client_secret under 'installed'.")
         return data
     if isinstance(data, dict) and "web" in data:
@@ -298,15 +303,19 @@ def _known_secrets() -> tuple[str, ...]:
         if value := os.environ.get(var):
             secrets.add(value)
     try:
-        client = next(iter(auth.client_config().values()))
-        if value := client.get("client_secret"):
-            secrets.add(value)
-    except (auth.AuthError, StopIteration):
+        config = auth.client_config()
+        client = next(iter(config.values())) if isinstance(config, dict) else None
+        if isinstance(client, dict):
+            value = client.get("client_secret")
+            if isinstance(value, str) and value:
+                secrets.add(value)
+    except (auth.AuthError, StopIteration, OSError, ValueError):
         pass
     try:
         token = json.loads(auth.TOKEN_PATH.read_text(encoding="utf-8"))
         for key in ("client_secret", "refresh_token"):
-            if value := token.get(key):
+            value = token.get(key)
+            if isinstance(value, str) and value:
                 secrets.add(value)
     except (OSError, json.JSONDecodeError, AttributeError):
         pass

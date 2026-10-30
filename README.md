@@ -254,6 +254,7 @@ The output ends with a metadata block. `more_may_exist: true` means the page was
 | Problem | Fix |
 | --- | --- |
 | `No OAuth client configured` | Run `easygsc setup`, or check the path and name (Manual setup, step 2). |
+| Client file rejected as invalid JSON, an invalid `installed` section, or missing `client_id`/`client_secret` | Download a fresh **Desktop app** JSON from the [Clients page](https://console.cloud.google.com/auth/clients). Upload it again, or select it in `setup --no-browser`; setup asks before replacing an existing client. Do not edit the JSON by hand. |
 | `auth failed: Client secrets is not in the correct format` | The client file is incomplete or was edited. Download it again from the [Clients page](https://console.cloud.google.com/auth/clients) and run `easygsc setup`. |
 | `auth` fails right away with a valid-looking file | The client must be **Desktop app**. Open the JSON: it should start with `{"installed":`. If it starts with `{"web":`, create a new Desktop client. |
 | "Google hasn't verified this app" | Normal. Click **Advanced → Go to easygsc**. |
